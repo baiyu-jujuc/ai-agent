@@ -7,7 +7,6 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
 
 import java.util.*;
@@ -21,13 +20,17 @@ public class ChatController {
     private final ChatClient chatClient;
     private final ChatModel chatModel;
     private final CoordinatorAgent coordinatorAgent;
+    private final Map<String, Agent> agents;
     private final ChatMemoryService memoryService;
 
     public ChatController(ChatModel chatModel, ChatClient chatClient,
-                         CoordinatorAgent coordinatorAgent, ChatMemoryService memoryService) {
+                         CoordinatorAgent coordinatorAgent,
+                         Map<String, Agent> agents,
+                         ChatMemoryService memoryService) {
         this.chatModel = chatModel;
         this.chatClient = chatClient;
         this.coordinatorAgent = coordinatorAgent;
+        this.agents = agents;
         this.memoryService = memoryService;
     }
 
@@ -52,11 +55,7 @@ public class ChatController {
         return chatClient.prompt()
                 .user(message)
                 .stream()
-                .content()
-                .doOnComplete(() -> {
-                    // Note: For streaming, the full response would need to be collected
-                    // to store in memory. This is a simplified version.
-                });
+                .content();
     }
 
     @PostMapping("/agent/{agentName}")
@@ -68,10 +67,15 @@ public class ChatController {
         memoryService.addUserMessage(conversationId, message);
         List<Message> history = memoryService.getHistory(conversationId);
 
-        String response = coordinatorAgent.execute(message, history);
+        Agent targetAgent = agents.get(agentName);
+        if (targetAgent == null) {
+            targetAgent = coordinatorAgent;
+        }
+
+        String response = targetAgent.execute(message, history);
         memoryService.addAssistantMessage(conversationId, response);
 
-        return Map.of("response", response, "agent", "coordinator", "conversationId", conversationId);
+        return Map.of("response", response, "agent", targetAgent.getName(), "conversationId", conversationId);
     }
 
     @GetMapping("/history/{conversationId}")
