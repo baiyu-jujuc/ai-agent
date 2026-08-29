@@ -1,14 +1,16 @@
 package com.baiyu.agent.api;
 
+import com.baiyu.agent.agent.Agent;
+import com.baiyu.agent.agent.CoordinatorAgent;
+import com.baiyu.agent.memory.ChatMemoryService;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
 
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -18,58 +20,76 @@ public class ChatController {
 
     private final ChatClient chatClient;
     private final ChatModel chatModel;
+    private final CoordinatorAgent coordinatorAgent;
+    private final ChatMemoryService memoryService;
 
-    public ChatController(ChatModel chatModel) {
-        this.chatModel = ChatClient.create(chatModel);
+    public ChatController(ChatModel chatModel, ChatClient chatClient,
+                         CoordinatorAgent coordinatorAgent, ChatMemoryService memoryService) {
         this.chatModel = chatModel;
+        this.chatClient = chatClient;
+        this.coordinatorAgent = coordinatorAgent;
+        this.memoryService = memoryService;
     }
 
     @PostMapping("/simple")
     public Map<String, String> chat(@RequestBody Map<String, String> request) {
         String message = request.get("message");
-        String response = chatClient.prompt()
-                .user(message)
-                .call()
-                .content();
-        return Map.of("response", response);
+        String conversationId = request.getOrDefault("conversationId", "default");
+
+        memoryService.addUserMessage(conversationId, message);
+        List<Message> history = memoryService.getHistory(conversationId);
+
+        String response = coordinatorAgent.execute(message, history);
+        memoryService.addAssistantMessage(conversationId, response);
+
+        return Map.of("response", response, "conversationId", conversationId);
     }
 
     @GetMapping(value = "/stream", produces = "text/event-stream")
-    public Flux<String> streamChat(@RequestParam String message) {
+    public Flux<String> streamChat(@RequestParam String message,
+                                    @RequestParam(defaultValue = "default") String conversationId) {
+        memoryService.addUserMessage(conversationId, message);
         return chatClient.prompt()
                 .user(message)
                 .stream()
-                .content();
+                .content()
+                .doOnComplete(() -> {
+                    // Note: For streaming, the full response would need to be collected
+                    // to store in memory. This is a simplified version.
+                });
     }
 
-    @PostMapping(value = "/sse", produces = "text/event-stream")
-    public SseEmitter sseChat(@RequestBody Map<String, String> request) {
-        SseEmitter emitter = new SseEmitter(60000L);
-        ExecutorService executor = Executors.newSingleThreadExecutor();
+    @PostMapping("/agent/{agentName}")
+    public Map<String, String> chatWithAgent(@PathVariable String agentName,
+                                              @RequestBody Map<String, String> request) {
+        String message = request.get("message");
+        String conversationId = request.getOrDefault("conversationId", "default");
 
-        executor.execute(() -> {
-            try {
-                String message = request.get("message");
-                chatModel.stream(new Prompt(new UserMessage(message)))
-                        .toIterable()
-                        .forEach(chunk -> {
-                            try {
-                                String content = chunk.getResult().getOutput().getText();
-                                if (content != null) {
-                                    emitter.send(SseEmitter.event().data(content));
-                                }
-                            } catch (Exception e) {
-                                emitter.completeWithError(e);
-                            }
-                        });
-                emitter.complete();
-            } catch (Exception e) {
-                emitter.completeWithError(e);
-            } finally {
-                executor.shutdown();
-            }
-        });
+        memoryService.addUserMessage(conversationId, message);
+        List<Message> history = memoryService.getHistory(conversationId);
 
-        return emitter;
+        String response = coordinatorAgent.execute(message, history);
+        memoryService.addAssistantMessage(conversationId, response);
+
+        return Map.of("response", response, "agent", "coordinator", "conversationId", conversationId);
+    }
+
+    @GetMapping("/history/{conversationId}")
+    public List<Map<String, String>> getHistory(@PathVariable String conversationId) {
+        List<Message> history = memoryService.getHistory(conversationId);
+        List<Map<String, String>> result = new ArrayList<>();
+        for (Message msg : history) {
+            result.add(Map.of(
+                    "role", msg.getMessageType().name(),
+                    "content", msg.getText()
+            ));
+        }
+        return result;
+    }
+
+    @DeleteMapping("/history/{conversationId}")
+    public Map<String, String> clearHistory(@PathVariable String conversationId) {
+        memoryService.clearHistory(conversationId);
+        return Map.of("status", "cleared", "conversationId", conversationId);
     }
 }

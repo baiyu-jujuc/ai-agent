@@ -19,8 +19,20 @@
 
     <properties>
         <java.version>21</java.version>
-        <spring-ai.version>1.0.0-M6</spring-ai.version>
+        <spring-ai.version>1.0.0</spring-ai.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <!-- Spring Boot Web -->
@@ -29,7 +41,7 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
-        <!-- Spring Boot WebFlux (for SSE streaming) -->
+        <!-- Spring Boot WebFlux (for SSE streaming + reactive) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
@@ -38,32 +50,39 @@
         <!-- Spring AI OpenAI (DeepSeek uses OpenAI-compatible API) -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-openai-spring-boot-starter</artifactId>
-            <version>${spring-ai.version}</version>
+            <artifactId>spring-ai-openai</artifactId>
         </dependency>
 
-        <!-- Spring AI Vector Store (Simple in-memory for dev, switch to Qdrant later) -->
+        <!-- Spring AI Chat Client -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-simple-vector-store-spring-boot-starter</artifactId>
-            <version>${spring-ai.version}</version>
+            <artifactId>spring-ai-client-chat</artifactId>
         </dependency>
 
-        <!-- Spring AI Document Readers (PDF, Markdown, Text) -->
+        <!-- Spring AI RAG -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-rag</artifactId>
+        </dependency>
+
+        <!-- Spring AI Vector Store -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-vector-store</artifactId>
+        </dependency>
+
+        <!-- Spring AI Document Readers -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-pdf-document-reader</artifactId>
-            <version>${spring-ai.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-markdown-document-reader</artifactId>
-            <version>${spring-ai.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-tika-document-reader</artifactId>
-            <version>${spring-ai.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-markdown-document-reader</artifactId>
         </dependency>
 
         <!-- Spring Boot Actuator (observability) -->
