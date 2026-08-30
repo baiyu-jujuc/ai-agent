@@ -3,208 +3,281 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Agent</title>
+    <title>AI Agent - 多功能智能体</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; background: #0d1117; color: #e6edf3; height: 100vh; display: flex; }
-        
-        .sidebar { width: 260px; background: #161b22; border-right: 1px solid #30363d; display: flex; flex-direction: column; }
-        .sidebar-header { padding: 16px; border-bottom: 1px solid #30363d; }
-        .sidebar-header h1 { font-size: 1.2em; color: #58a6ff; margin-bottom: 4px; }
-        .sidebar-header .badge { background: rgba(63,185,80,0.15); color: #3fb950; padding: 2px 10px; border-radius: 12px; font-size: 0.75em; }
-        
-        .sidebar-section { padding: 12px 16px; border-bottom: 1px solid #21262d; }
-        .sidebar-section h2 { font-size: 0.8em; color: #8b949e; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.5px; }
-        
+        :root {
+            --bg: #0f0f0f;
+            --sidebar: #1a1a2e;
+            --card: #16213e;
+            --border: #233;
+            --text: #e0e0e0;
+            --text-dim: #888;
+            --accent: #4a9eff;
+            --accent-dim: #2a6ec0;
+            --green: #4ade80;
+            --red: #f87171;
+            --yellow: #fbbf24;
+        }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; }
+
+        /* Sidebar */
+        .sidebar { width: 260px; background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+        .sidebar-header { padding: 20px; border-bottom: 1px solid var(--border); }
+        .sidebar-header h1 { font-size: 18px; color: var(--accent); }
+        .sidebar-header p { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+
+        .sidebar-section { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+        .sidebar-section h3 { font-size: 12px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 8px; }
+        .model-select { width: 100%; padding: 8px; background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font-size: 13px; }
         .agent-list { display: flex; flex-direction: column; gap: 4px; }
-        .agent-item { padding: 8px 12px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 0.9em; transition: background 0.2s; }
-        .agent-item:hover { background: #21262d; }
-        .agent-item.active { background: #1f6feb33; border: 1px solid #1f6feb; }
-        .agent-item .dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950; }
-        
-        .tool-list { display: flex; flex-direction: column; gap: 4px; }
-        .tool-item { padding: 6px 12px; font-size: 0.85em; color: #8b949e; display: flex; justify-content: space-between; }
-        .tool-item .name { color: #d2a8ff; }
-        
-        .upload-btn { background: #21262d; border: 1px solid #30363d; color: #c9d1d9; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85em; width: 100%; text-align: center; transition: background 0.2s; }
-        .upload-btn:hover { background: #30363d; }
-        
+        .agent-item { padding: 8px 12px; background: var(--card); border-radius: 4px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+        .agent-item:hover { background: var(--accent-dim); }
+        .agent-item.active { background: var(--accent-dim); border-left: 3px solid var(--accent); }
+        .agent-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+
+        .tool-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-top: 8px; }
+        .toggle-switch { position: relative; width: 36px; height: 20px; background: var(--border); border-radius: 10px; cursor: pointer; transition: 0.3s; }
+        .toggle-switch.on { background: var(--green); }
+        .toggle-knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; background: white; border-radius: 50%; transition: 0.3s; }
+        .toggle-switch.on .toggle-knob { left: 18px; }
+
+        /* Main chat area */
         .main { flex: 1; display: flex; flex-direction: column; }
-        .main-header { background: #161b22; border-bottom: 1px solid #30363d; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
-        .main-header .title { font-size: 1em; color: #e6edf3; }
-        .main-header .conv-id { font-size: 0.8em; color: #8b949e; }
-        
-        .chat-container { flex: 1; overflow-y: auto; padding: 20px 24px; }
-        .message { margin-bottom: 16px; max-width: 80%; }
-        .message.user { margin-left: auto; }
-        .message .bubble { padding: 12px 16px; border-radius: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
-        .message.user .bubble { background: #1f6feb; }
-        .message.assistant .bubble { background: #161b22; border: 1px solid #30363d; }
-        .message.assistant .bubble pre { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 12px; margin: 8px 0; overflow-x: auto; }
-        .message.assistant .bubble code { font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 0.9em; }
-        .message.assistant .bubble.streaming::after { content: '▊'; animation: blink 1s infinite; }
-        @keyframes blink { 0%,50% { opacity:1; } 51%,100% { opacity:0; } }
-        
-        .input-area { background: #161b22; border-top: 1px solid #30363d; padding: 16px 24px; display: flex; gap: 12px; align-items: center; }
-        .input-area input { flex: 1; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 12px 16px; color: #e6edf3; font-size: 1em; outline: none; }
-        .input-area input:focus { border-color: #58a6ff; }
-        .input-area button { background: #1f6feb; color: white; border: none; border-radius: 8px; padding: 12px 24px; cursor: pointer; font-size: 1em; }
-        .input-area button:hover { background: #388bfd; }
-        .input-area button:disabled { background: #21262d; cursor: not-allowed; }
-        .input-area .clear-btn { background: #21262d; border: 1px solid #30363d; color: #c9d1d9; padding: 12px 16px; border-radius: 8px; cursor: pointer; font-size: 0.9em; }
+        .chat-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .chat-header h2 { font-size: 16px; }
+        .status-badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; background: var(--green); color: #000; }
+
+        .chat-messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+        .msg { max-width: 80%; padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.6; }
+        .msg.user { align-self: flex-end; background: var(--accent-dim); }
+        .msg.assistant { align-self: flex-start; background: var(--card); border: 1px solid var(--border); }
+        .msg.tool-result { align-self: center; background: #1a3a1a; border: 1px solid var(--green); font-family: monospace; font-size: 12px; max-width: 90%; }
+        .msg .meta { font-size: 11px; color: var(--text-dim); margin-bottom: 4px; }
+
+        .chat-input { padding: 16px 20px; border-top: 1px solid var(--border); display: flex; gap: 12px; }
+        .chat-input textarea { flex: 1; padding: 12px; background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 8px; font-size: 14px; resize: none; height: 44px; max-height: 120px; }
+        .chat-input button { padding: 12px 24px; background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
+        .chat-input button:hover { background: var(--accent-dim); }
+        .chat-input button:disabled { background: var(--border); cursor: not-allowed; }
+
+        /* Right panel - tools */
+        .right-panel { width: 280px; background: var(--sidebar); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+        .right-panel h3 { padding: 16px; font-size: 14px; border-bottom: 1px solid var(--border); }
+        .tool-list { flex: 1; overflow-y: auto; padding: 8px; }
+        .tool-card { padding: 12px; background: var(--card); border-radius: 6px; margin-bottom: 8px; }
+        .tool-card .name { font-size: 13px; color: var(--accent); font-weight: 600; }
+        .tool-card .desc { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+        .tool-test { margin-top: 8px; display: flex; gap: 4px; }
+        .tool-test input { flex: 1; padding: 6px 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font-size: 12px; }
+        .tool-test button { padding: 6px 12px; background: var(--accent-dim); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
     </style>
 </head>
 <body>
     <div class="sidebar">
         <div class="sidebar-header">
             <h1>AI Agent</h1>
-            <span class="badge">DeepSeek V4 Pro</span>
+            <p>多功能智能体系统</p>
         </div>
-        
         <div class="sidebar-section">
-            <h2>Agents</h2>
+            <h3>模型选择</h3>
+            <select class="model-select" id="modelSelect">
+                <option value="deepseek-v4-flash">DeepSeek V4 Flash (低成本)</option>
+                <option value="deepseek-v4-pro">DeepSeek V4 Pro (高性能)</option>
+                <option value="deepseek-v4-flash-vision-exp">DeepSeek V4 Vision</option>
+            </select>
+            <div class="tool-toggle">
+                <div class="toggle-switch" id="toolsToggle">
+                    <div class="toggle-knob"></div>
+                </div>
+                <span>启用工具调用</span>
+            </div>
+        </div>
+        <div class="sidebar-section">
+            <h3>Agent 列表</h3>
             <div class="agent-list" id="agentList">
-                <div class="agent-item active" data-agent="coordinator">
-                    <span class="dot"></span> Coordinator
-                </div>
-                <div class="agent-item" data-agent="code">
-                    <span class="dot"></span> Code Agent
-                </div>
-                <div class="agent-item" data-agent="research">
-                    <span class="dot"></span> Research
-                </div>
-                <div class="agent-item" data-agent="data">
-                    <span class="dot"></span> Data Agent
-                </div>
-                <div class="agent-item" data-agent="react">
-                    <span class="dot"></span> ReAct Agent
-                </div>
+                <div class="agent-item active" data-agent="coordinator"><div class="agent-dot"></div>Coordinator</div>
+                <div class="agent-item" data-agent="code"><div class="agent-dot"></div>Code Agent</div>
+                <div class="agent-item" data-agent="research"><div class="agent-dot"></div>Research Agent</div>
+                <div class="agent-item" data-agent="data"><div class="agent-dot"></div>Data Agent</div>
+                <div class="agent-item" data-agent="react"><div class="agent-dot"></div>ReAct Agent</div>
             </div>
         </div>
-        
         <div class="sidebar-section">
-            <h2>Tools</h2>
-            <div class="tool-list" id="toolList">
-                <div class="tool-item"><span class="name">calculator</span><span>Math</span></div>
-                <div class="tool-item"><span class="name">time</span><span>Info</span></div>
-                <div class="tool-item"><span class="name">systeminfo</span><span>Info</span></div>
+            <h3>对话</h3>
+            <div class="agent-list">
+                <div class="agent-item" id="newChatBtn"><div class="agent-dot" style="background:var(--accent)"></div>新对话</div>
+                <div class="agent-item" id="clearChatBtn"><div class="agent-dot" style="background:var(--red)"></div>清空记录</div>
             </div>
-        </div>
-        
-        <div class="sidebar-section">
-            <h2>Knowledge Base</h2>
-            <label class="upload-btn">
-                Upload Document
-                <input type="file" id="fileUpload" accept=".txt,.md,.pdf" style="display:none;">
-            </label>
-            <div id="uploadStatus" style="font-size:0.8em;color:#8b949e;margin-top:6px;"></div>
-        </div>
-        
-        <div class="sidebar-section" style="margin-top:auto;">
-            <div class="conv-id">Session: <span id="convId">default</span></div>
         </div>
     </div>
-    
+
     <div class="main">
-        <div class="main-header">
-            <span class="title" id="currentAgent">Coordinator Agent</span>
-            <button class="clear-btn" onclick="clearHistory()">Clear</button>
+        <div class="chat-header">
+            <h2 id="chatTitle">AI Agent</h2>
+            <span class="status-badge" id="statusBadge">在线</span>
         </div>
-        <div class="chat-container" id="chat"></div>
-        <div class="input-area">
-            <input type="text" id="input" placeholder="Type a message..." autocomplete="off">
-            <button id="send" onclick="sendMessage()">Send</button>
+        <div class="chat-messages" id="messages">
+            <div class="msg assistant">
+                <div class="meta">AI Agent</div>
+                你好！我是多功能 AI Agent，可以聊天、搜索、查天气、读写文件等。选择左边的模型和工具来开始吧。
+            </div>
+        </div>
+        <div class="chat-input">
+            <textarea id="input" placeholder="输入消息... (Enter 发送, Shift+Enter 换行)" rows="1"></textarea>
+            <button id="sendBtn" onclick="sendMessage()">发送</button>
         </div>
     </div>
-    
+
+    <div class="right-panel">
+        <h3>工具面板</h3>
+        <div class="tool-list" id="toolList"></div>
+    </div>
+
     <script>
-        const chat = document.getElementById('chat');
-        const input = document.getElementById('input');
-        const sendBtn = document.getElementById('send');
-        let currentAgent = 'coordinator';
-        const convId = 'session-' + Date.now();
-        document.getElementById('convId').textContent = convId.substring(0, 12);
-        
+        let conversationId = 'session-' + Date.now();
+        let selectedAgent = 'coordinator';
+        let useTools = false;
+        let selectedModel = 'deepseek-v4-flash';
+
+        // Model selector
+        document.getElementById('modelSelect').addEventListener('change', e => {
+            selectedModel = e.target.value;
+        });
+
+        // Tools toggle
+        document.getElementById('toolsToggle').addEventListener('click', e => {
+            useTools = !useTools;
+            e.currentTarget.classList.toggle('on', useTools);
+        });
+
         // Agent selection
-        document.querySelectorAll('.agent-item').forEach(item => {
-            item.addEventListener('click', () => {
-                document.querySelectorAll('.agent-item').forEach(i => i.classList.remove('active'));
-                item.classList.add('active');
-                currentAgent = item.dataset.agent;
-                document.getElementById('currentAgent').textContent = item.textContent.trim() + ' Agent';
+        document.querySelectorAll('.agent-item[data-agent]').forEach(el => {
+            el.addEventListener('click', () => {
+                document.querySelectorAll('.agent-item[data-agent]').forEach(a => a.classList.remove('active'));
+                el.classList.add('active');
+                selectedAgent = el.dataset.agent;
+                document.getElementById('chatTitle').textContent = selectedAgent + ' Agent';
             });
         });
-        
-        // Load tools
-        fetch('/api/tools').then(r => r.json()).then(tools => {
-            const list = document.getElementById('toolList');
-            list.innerHTML = tools.map(t => `<div class="tool-item"><span class="name">${t.name}</span><span>${t.description.substring(0, 20)}</span></div>`).join('');
-        }).catch(() => {});
-        
-        // File upload
-        document.getElementById('fileUpload').addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const status = document.getElementById('uploadStatus');
-            status.textContent = 'Uploading...';
-            const formData = new FormData();
-            formData.append('file', file);
-            try {
-                const res = await fetch('/api/rag/upload', { method: 'POST', body: formData });
-                const data = await res.json();
-                status.textContent = data.message || data.status;
-            } catch (err) {
-                status.textContent = 'Error: ' + err.message;
+
+        // New chat
+        document.getElementById('newChatBtn').addEventListener('click', () => {
+            conversationId = 'session-' + Date.now();
+            document.getElementById('messages').innerHTML = '';
+            addMessage('assistant', '新对话已开始。');
+        });
+
+        // Clear chat
+        document.getElementById('clearChatBtn').addEventListener('click', async () => {
+            await fetch('/api/chat/history/' + conversationId, { method: 'DELETE' });
+            document.getElementById('messages').innerHTML = '';
+            addMessage('assistant', '对话记录已清空。');
+        });
+
+        // Input handling
+        const input = document.getElementById('input');
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
             }
         });
-        
-        input.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendMessage();
+        input.addEventListener('input', () => {
+            input.style.height = 'auto';
+            input.style.height = Math.min(input.scrollHeight, 120) + 'px';
         });
-        
+
+        // Send message
         async function sendMessage() {
-            const message = input.value.trim();
-            if (!message) return;
+            const text = input.value.trim();
+            if (!text) return;
+
+            addMessage('user', text);
             input.value = '';
+            input.style.height = 'auto';
+
+            const sendBtn = document.getElementById('sendBtn');
             sendBtn.disabled = true;
-            
-            addMessage('user', message);
-            const assistantDiv = addMessage('assistant', '');
-            const bubble = assistantDiv.querySelector('.bubble');
-            bubble.classList.add('streaming');
-            
+            sendBtn.textContent = '思考中...';
+
             try {
-                const response = await fetch('/api/chat/agent/' + currentAgent, {
+                const endpoint = useTools ? '/api/chat/simple' : '/api/chat/agent/' + selectedAgent;
+                const body = useTools
+                    ? { message: text, conversationId, model: selectedModel, useTools: 'true' }
+                    : { message: text, conversationId, model: selectedModel };
+
+                const res = await fetch(endpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message, conversationId: convId })
+                    body: JSON.stringify(body)
                 });
-                const data = await response.json();
-                bubble.textContent = data.response || data.error || 'No response';
-            } catch (error) {
-                bubble.textContent = 'Error: ' + error.message;
+                const data = await res.json();
+                addMessage('assistant', data.response, data.model || selectedModel);
+            } catch (err) {
+                addMessage('assistant', '请求失败: ' + err.message);
             } finally {
-                bubble.classList.remove('streaming');
                 sendBtn.disabled = false;
-                input.focus();
-                chat.scrollTop = chat.scrollHeight;
+                sendBtn.textContent = '发送';
             }
         }
-        
-        async function clearHistory() {
-            await fetch('/api/chat/history/' + convId, { method: 'DELETE' });
-            chat.innerHTML = '';
-        }
-        
-        function addMessage(role, text) {
+
+        function addMessage(role, content, meta) {
             const div = document.createElement('div');
-            div.className = 'message ' + role;
-            const formatted = text.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="$1">$2</code></pre>');
-            div.innerHTML = `<div class="bubble">${formatted}</div>`;
-            chat.appendChild(div);
-            chat.scrollTop = chat.scrollHeight;
-            return div;
+            div.className = 'msg ' + role;
+            let html = '';
+            if (meta) html += '<div class="meta">' + meta + '</div>';
+            html += content.replace(/\n/g, '<br>');
+            div.innerHTML = html;
+            document.getElementById('messages').appendChild(div);
+            div.scrollIntoView({ behavior: 'smooth' });
         }
+
+        // Load tools
+        async function loadTools() {
+            const res = await fetch('/api/chat/tools');
+            const tools = await res.json();
+            const list = document.getElementById('toolList');
+            list.innerHTML = '';
+            tools.forEach(t => {
+                const card = document.createElement('div');
+                card.className = 'tool-card';
+                card.innerHTML = `
+                    <div class="name">${t.name}</div>
+                    <div class="desc">${t.description}</div>
+                    <div class="tool-test">
+                        <input placeholder="输入参数..." data-tool="${t.name}">
+                        <button onclick="testTool('${t.name}', this)">执行</button>
+                    </div>
+                `;
+                list.appendChild(card);
+            });
+        }
+
+        async function testTool(name, btn) {
+            const input = btn.previousElementSibling;
+            const val = input.value.trim();
+            if (!val) { alert('请输入参数'); return; }
+
+            btn.textContent = '...';
+            btn.disabled = true;
+            try {
+                const res = await fetch('/api/tools/' + name, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ input: val })
+                });
+                const data = await res.json();
+                addMessage('tool-result', '🔧 ' + name + '("' + val + '"):\n' + data.result);
+            } catch (err) {
+                addMessage('tool-result', '执行失败: ' + err.message);
+            } finally {
+                btn.textContent = '执行';
+                btn.disabled = false;
+            }
+        }
+
+        loadTools();
     </script>
 </body>
 </html>

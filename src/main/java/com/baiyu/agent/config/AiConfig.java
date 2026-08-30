@@ -15,10 +15,10 @@ public class AiConfig {
     @Value("${spring.ai.openai.api-key}")
     private String apiKey;
 
-    @Value("${spring.ai.openai.base-url:https://api.deepseek.com/v1}")
+    @Value("${spring.ai.openai.base-url:https://api.deepseek.com}")
     private String baseUrl;
 
-    @Value("${spring.ai.openai.chat.model:deepseek-v4-pro}")
+    @Value("${spring.ai.openai.chat.model:deepseek-v4-flash}")
     private String defaultModel;
 
     @Value("${spring.ai.openai.chat.options.temperature:0.7}")
@@ -55,7 +55,9 @@ public class AiConfig {
     @Bean
     public ChatClient chatClient(ChatModel chatModel) {
         return ChatClient.builder(chatModel)
-                .defaultSystem("You are a helpful AI assistant. Respond in the same language as the user's message.")
+                .defaultSystem("你是一个多功能AI助手，可以调用工具来帮助用户。" +
+                        "支持的功能包括：聊天、代码生成、数据分析、网络搜索、天气查询、文件操作。" +
+                        "请用用户的语言回复。")
                 .build();
     }
 }
