@@ -21,11 +21,24 @@ target/
 .DS_Store
 Thumbs.db
 
-# Environment
+# Environment & Secrets
 .env
 *.env
+application-local.yml
+application-secret.yml
+*.key
+*.pem
+*.p12
+*.jks
 
 # H2 Database
 *.db
 *.mv.db
 *.trace.db
+
+# Logs
+logs/
+*.log
+
+# Maven logs
+*.lastUpdated
