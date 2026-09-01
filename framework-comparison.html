@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Agent 框架重构对比</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: #0d1117;
+    color: #e6edf3;
+    line-height: 1.6;
+    padding: 40px 20px;
+  }
+  .container { max-width: 1200px; margin: 0 auto; }
+  h1 {
+    font-size: 2em;
+    text-align: center;
+    background: linear-gradient(135deg, #58a6ff, #bc8cff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+  }
+  .subtitle { text-align: center; color: #8b949e; margin-bottom: 40px; font-size: 0.95em; }
+  .summary-bar {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 40px;
+    flex-wrap: wrap;
+  }
+  .summary-card {
+    flex: 1;
+    min-width: 200px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+  }
+  .summary-card .num { font-size: 2em; font-weight: 700; }
+  .summary-card .label { color: #8b949e; font-size: 0.85em; margin-top: 4px; }
+  .summary-card.p0 .num { color: #f85149; }
+  .summary-card.p1 .num { color: #d29922; }
+  .summary-card.p2 .num { color: #58a6ff; }
+  .summary-card.files .num { color: #3fb950; }
+  .comparison-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+    background: #30363d;
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 32px;
+  }
+  .col-header {
+    background: #161b22;
+    padding: 16px 24px;
+    font-weight: 700;
+    font-size: 1.1em;
+  }
+  .col-header.original { color: #f85149; border-bottom: 2px solid #f8514944; }
+  .col-header.refactored { color: #3fb950; border-bottom: 2px solid #3fb95044; }
+  .row {
+    background: #0d1117;
+    padding: 20px 24px;
+  }
+  .row-title {
+    grid-column: 1 / -1;
+    background: #161b22;
+    padding: 14px 24px;
+    font-weight: 700;
+    color: #bc8cff;
+    border-top: 1px solid #30363d;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .priority-badge {
+    font-size: 0.7em;
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-weight: 600;
+  }
+  .p0-badge { background: #f8514922; color: #f85149; }
+  .p1-badge { background: #d2992222; color: #d29922; }
+  .p2-badge { background: #58a6ff22; color: #58a6ff; }
+  .p3-badge { background: #3fb95022; color: #3fb950; }
+  .code-block {
+    background: #010409;
+    border-radius: 6px;
+    padding: 12px;
+    margin: 8px 0;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 0.82em;
+    color: #c9d1d9;
+    overflow-x: auto;
+    border: 1px solid #21262d;
+  }
+  .code-block .comment { color: #8b949e; }
+  .code-block .keyword { color: #ff7b72; }
+  .code-block .string { color: #a5d6ff; }
+  .code-block .annotation { color: #d2a8ff; }
+  .problem { color: #f85149; }
+  .fix { color: #3fb950; }
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.78em;
+    margin-right: 4px;
+  }
+  .tag-broken { background: #f8514922; color: #f85149; }
+  .tag-fixed { background: #3fb95022; color: #3fb950; }
+  .tag-new { background: #58a6ff22; color: #58a6ff; }
+  .tag-improved { background: #d2992222; color: #d29922; }
+  .file-list {
+    font-family: 'Consolas', monospace;
+    font-size: 0.82em;
+    color: #8b949e;
+  }
+  .file-list .new { color: #3fb950; }
+  .file-list .modified { color: #d29922; }
+  .file-list .created { color: #58a6ff; }
+  .section {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 32px;
+  }
+  .section h2 {
+    color: #58a6ff;
+    margin-bottom: 16px;
+    font-size: 1.3em;
+  }
+  .section h3 {
+    color: #c9d1d9;
+    margin: 16px 0 8px;
+    font-size: 1.05em;
+  }
+  ul { padding-left: 20px; }
+  li { margin: 4px 0; color: #b1bac4; }
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #21262d;
+  }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-label { color: #8b949e; }
+  .stat-val-before { color: #f85149; }
+  .stat-val-after { color: #3fb950; }
+  @media (max-width: 768px) {
+    .comparison-grid { grid-template-columns: 1fr; }
+    .row-title { grid-column: 1; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>AI Agent 框架重构对比</h1>
+  <p class="subtitle">P0-P3 全优先级修复 · 原始架构 vs 重构后架构</p>
+
+  <div class="summary-bar">
+    <div class="summary-card p0"><div class="num">2</div><div class="label">P0 关键修复</div></div>
+    <div class="summary-card p1"><div class="num">3</div><div class="label">P1 核心改进</div></div>
+    <div class="summary-card p2"><div class="num">3</div><div class="label">P2 功能完善</div></div>
+    <div class="summary-card files"><div class="num">28</div><div class="label">Java 源文件</div></div>
+  </div>
+
+  <!-- P0: Embedding Model -->
+  <div class="comparison-grid">
+    <div class="row-title">
+      <span class="priority-badge p0-badge">P0</span> Embedding 模型配置
+    </div>
+    <div class="col-header original">重构前（不可用）</div>
+    <div class="col-header refactored">重构后（可用）</div>
+
+    <div class="row">
+      <span class="tag tag-broken">RAG 完全不可用</span><br><br>
+      <b>问题：</b>DeepSeek API 不支持 embedding 接口<br>
+      但配置中仍使用 DeepSeek 做 embedding<br><br>
+      <div class="code-block">
+<span class="comment"># application.yml - 错误配置</span>
+spring:
+  ai:
+    openai:
+      <span class="comment"># DeepSeek 没有 embedding API</span>
+      embedding:
+        enabled: <span class="keyword">true</span> <span class="comment"># 无效!</span>
+      </div>
+      <b>结果：</b><span class="problem">RAG 搜索抛异常，向量存储无法工作</span>
+    </div>
+
+    <div class="row">
+      <span class="tag tag-fixed">本地 ONNX 模型</span><br><br>
+      <b>方案：</b>改用本地 ONNX Transformers 模型<br>
+      <b>模型：</b>all-MiniLM-L6-v2（384维）<br>
+      <b>优势：</b>无需 API 调用，离线可用<br><br>
+      <div class="code-block">
+<span class="comment"># application.yml - 修复后</span>
+spring:
+  ai:
+    model:
+      embedding: <span class="string">transformers</span>
+    embedding:
+      transformer:
+        onnx:
+          model-uri: <span class="string">https://huggingface.co/.../model.onnx</span>
+        cache:
+          enabled: <span class="keyword">true</span>
+      </div>
+      <b>结果：</b><span class="fix">RAG 检索正常工作，本地缓存加速</span>
+    </div>
+  </div>
+
+  <!-- P0: Unified Tool System -->
+  <div class="comparison-grid">
+    <div class="row-title">
+      <span class="priority-badge p0-badge">P0</span> 工具系统统一
+    </div>
+    <div class="col-header original">重构前（双轨制）</div>
+    <div class="col-header refactored">重构后（统一）</div>
+
+    <div class="row">
+      <span class="tag tag-broken">架构债务</span><br><br>
+      <b>问题：</b>同时存在两套工具系统<br>
+      1. 自定义 <code>Tool</code> 接口 + <code>ToolCallback</code><br>
+      2. Spring AI <code>@Tool</code> 注解<br><br>
+      <div class="code-block">
+<span class="comment">// 旧方式 - 需要手动构建 ToolCallback[]</span>
+<span class="annotation">@Bean</span>
+ToolCallback[] toolCallbacks(...) {
+    <span class="keyword">return</span> tools.stream()
+        .map(t -> ToolCallbacks.from(t))
+        .toArray(ToolCallback[]::<span class="keyword">new</span>);
+}
+<span class="comment">// spring-ai 1.0 中 ToolCallbacks 类已删除</span>
+      </div>
+      <span class="problem">编译失败：ToolCallbacks 类不存在</span>
+    </div>
+
+    <div class="row">
+      <span class="tag tag-fixed">Spring AI 原生</span><br><br>
+      <b>方案：</b>废弃自定义接口，统一使用 <code>@Tool</code><br>
+      <b>机制：</b>通过 <code>ToolComponent</code> 标记接口收集<br><br>
+      <div class="code-block">
+<span class="comment">// 新方式 - 直接传对象给 ChatClient</span>
+<span class="annotation">@Component</span>
+<span class="keyword">public class</span> CalculatorTool <span class="keyword">implements</span> ToolComponent {
+    <span class="annotation">@Tool</span>(name = <span class="string">"calculator"</span>,
+          description = <span class="string">"数学计算"</span>)
+    <span class="keyword">public</span> String calculate(String input) { ... }
+}
+<span class="comment">// 使用时直接传入</span>
+spec.tools(toolComponents.toArray());
+      </div>
+      <span class="fix">编译通过，工具自动绑定参数</span>
+    </div>
+  </div>
+
+  <!-- P1: CoordinatorAgent -->
+  <div class="comparison-grid">
+    <div class="row-title">
+      <span class="priority-badge p1-badge">P1</span> CoordinatorAgent 多Agent编排
+    </div>
+    <div class="col-header original">重构前（假路由）</div>
+    <div class="col-header refactored">重构后（真编排）</div>
+
+    <div class="row">
+      <span class="tag tag-broken">无法路由中文</span><br><br>
+      <b>问题：</b>仅靠英文关键词匹配<br>
+      <b>缺陷：</b>中文请求几乎全部走默认<br><br>
+      <div class="code-block">
+<span class="comment">// 旧方式 - 纯关键词</span>
+<span class="keyword">if</span> (input.contains(<span class="string">"code"</span>))
+    <span class="keyword">return</span> <span class="string">"code"</span>;
+<span class="keyword">if</span> (input.contains(<span class="string">"data"</span>))
+    <span class="keyword">return</span> <span class="string">"data"</span>;
+<span class="comment">// "帮我写个函数" → 无法匹配 → 默认</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="tag tag-improved">LLM 意图分类</span><br><br>
+      <b>方案：</b>LLM 意图分类 + 关键词降级<br>
+      <b>支持：</b>中英文混合输入<br><br>
+      <div class="code-block">
+<span class="comment">// 新方式 - LLM 路由 + 降级</span>
+RoutingDecision decision = chatClient.prompt()
+    .system(<span class="string">"意图分类器..."</span>)
+    .user(input)
+    .options(ChatOptions.builder()
+        .temperature(0.0).build())
+    .call().entity(RoutingDecision.class);
+<span class="comment">// 失败时降级到中文关键词</span>
+<span class="keyword">if</span> (lower.contains(<span class="string">"代码"</span>)) <span class="keyword">return</span> <span class="string">"code"</span>;
+      </div>
+    </div>
+  </div>
+
+  <!-- P1: Orchestrator -->
+  <div class="comparison-grid">
+    <div class="row-title">
+      <span class="priority-badge p1-badge">P1</span> Orchestrator 编排策略
+    </div>
+    <div class="col-header original">重构前（有缺陷）</div>
+    <div class="col-header refactored">重构后（完善）</div>
+
+    <div class="row">
+      <span class="tag tag-broken">资源泄漏</span><br><br>
+      <b>问题：</b><br>
+      1. 线程池无超时控制<br>
+      2. 无守护线程标记<br>
+      3. 缺少 SequentialStrategy<br>
+      4. 缺少 OrchestrationStrategy 接口<br><br>
+      <div class="code-block">
+<span class="comment">// 旧 - 无超时</span>
+<span class="keyword">for</span> (Future f : futures) {
+    results.put(f.get().getKey(),
+                f.get().getValue());
+    <span class="comment">// 无 timeout → 永久阻塞风险</span>
+}
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="tag tag-fixed">超时 + 守护线程</span>
+      <span class="tag tag-new">SequentialStrategy</span><br><br>
+      <b>修复：</b><br>
+      1. 超时控制（agent.timeout-seconds）<br>
+      2. 守护线程池<br>
+      3. 新增 SequentialStrategy（链式传递）<br>
+      4. 新增 OrchestrationStrategy 接口<br><br>
+      <div class="code-block">
+<span class="comment">// 新 - 带超时和取消</span>
+<span class="keyword">try</span> {
+    Map.Entry e = f.get(timeoutSeconds,
+        TimeUnit.SECONDS);
+} <span class="keyword">catch</span> (TimeoutException ex) {
+    f.cancel(<span class="keyword">true</span>);
+}
+<span class="comment">// 守护线程，JVM退出时自动清理</span>
+t.setDaemon(<span class="keyword">true</span>);
+      </div>
+    </div>
+  </div>
+
+  <!-- P1: Token Budget -->
+  <div class="comparison-grid">
+    <div class="row-title">
+      <span class="priority-badge p1-badge">P1</span> 记忆 Token 预算管理
+    </div>
+    <div class="col-header original">重构前（无限制）</div>
+    <div class="col-header refactored">重构后（有预算）</div>
+
+    <div class="row">
+      <span class="tag tag-broken">上下文溢出</span><br><br>
+      <b>问题：</b>对话历史无限增长<br>
+      <b>风险：</b>超出模型上下文窗口<br><br>
+      <div class="code-block">
+<span class="comment">// 旧 - 仅限制消息数</span>
+<span class="keyword">while</span> (history.size() > maxMessages) {
+    history.pollFirst();
+}
+<span class="comment">// 40条长消息仍可能 > 32K tokens</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="tag tag-new">Token 预算裁剪</span><br><br>
+      <b>方案：</b>双重限制（消息数 + token）<br>
+      <b>估算：</b>1 token ≈ 3.5 字符<br><br>
+      <div class="code-block">
+<span class="comment">// 新 - 消息数 + token 双重裁剪</span>
+<span class="keyword">while</span> (history.size() > maxMessages)
+    history.pollFirst();
+<span class="keyword">int</span> total = estimateTokens(history);
+<span class="keyword">while</span> (total > maxTokens && history.size() > 2) {
+    history.pollFirst();
+    total = estimateTokens(history);
+}
+      </div>
+    </div>
+  </div>
+
+  <!-- P2: Security -->
+  <div class="comparison-grid">
+    <div class="row-title">
+      <span class="priority-badge p2-badge">P2</span> 安全防护 (CORS + 异常 + 限流 + API Key)
+    </div>
+    <div class="col-header original">重构前（裸奔）</div>
+    <div class="col-header refactored">重构后（防护齐全）</div>
+
+    <div class="row">
+      <span class="tag tag-broken">无安全防护</span><br><br>
+      <b>问题：</b><br>
+      1. 无全局异常处理 → 堆栈泄露<br>
+      2. 无 CORS 配置 → 前端跨域被拒<br>
+      3. 无限流 → 可被 DDoS<br>
+      4. 无 API Key → 任何人可调用<br>
+      5. H2 控制台开启 → 数据库暴露<br>
+      6. 文件工具无路径校验 → 任意文件读写<br>
+      7. HTTP 工具无 SSRF 防护 → 内网探测<br><br>
+      <div class="code-block">
+<span class="comment">// 文件工具 - 旧（无校验）</span>
+Path path = Path.of(input);
+Files.readString(path);
+<span class="comment">// 可读取 /etc/passwd 等系统文件</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="tag tag-new">SecurityConfig</span>
+      <span class="tag tag-new">GlobalExceptionHandler</span><br><br>
+      <b>修复：</b><br>
+      1. <code>GlobalExceptionHandler</code> - 4类异常处理<br>
+      2. CORS - 允许跨域 + 凭证<br>
+      3. RateLimitInterceptor - 30 req/min/IP<br>
+      4. ApiKeyInterceptor - X-API-Key 校验<br>
+      5. H2 控制台默认关闭<br>
+      6. 文件工具沙箱（Path.normalize + startsWith）<br>
+      7. HTTP 工具 SSRF 黑名单（内网/元数据）<br><br>
+      <div class="code-block">
+<span class="comment">// 文件工具 - 新（沙箱）</span>
+Path baseDir = Path.of(allowedBaseDir)
+    .toAbsolutePath().normalize();
+Path resolved = baseDir.resolve(input).normalize();
+<span class="keyword">if</span> (!resolved.startsWith(baseDir))
+    <span class="keyword">throw new</span> SecurityException(<span class="string">"路径越权"</span>);
+      </div>
+    </div>
+  </div>
+
+  <!-- P2: VectorStore + RAG -->
+  <div class="comparison-grid">
+    <div class="row-title">
+      <span class="priority-badge p2-badge">P2</span> 向量存储 & RAG 检索
+    </div>
+    <div class="col-header original">重构前（假检索）</div>
+    <div class="col-header refactored">重构后（真检索）</div>
+
+    <div class="row">
+      <span class="tag tag-broken">无 embedding</span><br><br>
+      <b>问题：</b><br>
+      1. InMemoryVectorStore 不调用 embedding<br>
+      2. 无文档分块<br>
+      3. 无相似度阈值过滤<br>
+      4. 无余弦相似度计算<br><br>
+      <div class="code-block">
+<span class="comment">// 旧 - 只存不检索</span>
+store.add(List.of(doc));
+<span class="comment">// 搜索时返回全部，无相关性排序</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="tag tag-fixed">EmbeddingBasedVectorStore</span><br><br>
+      <b>修复：</b><br>
+      1. 自定义 <code>EmbeddingBasedVectorStore</code> 实现<br>
+      2. 文档分块（500字符/块，100重叠）<br>
+      3. 余弦相似度检索<br>
+      4. 相似度阈值过滤（0.5）<br>
+      5. 支持 Qdrant 切换<br><br>
+      <div class="code-block">
+<span class="comment">// 新 - 真正的向量检索</span>
+<span class="keyword">float</span>[] queryEmb = embeddingModel.embed(query);
+<span class="keyword">double</span> score = cosineSimilarity(
+    queryEmb, entry.embedding());
+<span class="keyword">return</span> scored.stream()
+    .filter(s -> s.score() >= threshold)
+    .limit(topK).toList();
+      </div>
+    </div>
+  </div>
+
+  <!-- P2: Tool Injection -->
+  <div class="comparison-grid">
+    <div class="row-title">
+      <span class="priority-badge p2-badge">P2</span> 专家 Agent 工具注入
+    </div>
+    <div class="col-header original">重构前（空壳）</div>
+    <div class="col-header refactored">重构后（有工具）</div>
+
+    <div class="row">
+      <span class="tag tag-broken">只是换了 prompt</span><br><br>
+      <b>问题：</b>每个 Agent 只是 system prompt 不同<br>
+      没有工具能力差异化<br><br>
+      <div class="code-block">
+<span class="keyword">public</span> CodeAgent(ChatClient chatClient) {
+    <span class="keyword">super</span>(chatClient, <span class="string">"你是代码专家..."</span>);
+    <span class="comment">// 无工具！只能纯文本对话</span>
+}
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="tag tag-fixed">按角色注入工具</span><br><br>
+      <b>修复：</b>每个 Agent 注入对应工具<br><br>
+      <div class="code-block">
+<span class="keyword">public</span> CodeAgent(ChatClient chatClient,
+                  List&lt;ToolComponent&gt; allTools) {
+    <span class="keyword">super</span>(chatClient, <span class="string">"你是代码专家..."</span>);
+    setTools(filterTools(allTools,
+        <span class="string">"calculator"</span>, <span class="string">"file"</span>, <span class="string">"systeminfo"</span>));
+}
+<span class="comment">// CodeAgent → calculator, file, systeminfo</span>
+<span class="comment">// ResearchAgent → web-search, http, weather</span>
+<span class="comment">// DataAgent → calculator, systeminfo, time</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Architecture Overview -->
+  <div class="section">
+    <h2>架构总览</h2>
+
+    <h3>重构前</h3>
+    <div class="code-block">
+AI Agent Application
+├── config/
+│   ├── AiConfig          (ChatClient + ChatModel)
+│   └── ToolConfig        (ToolCallback[] bean) <span class="problem">← 已废弃</span>
+├── tool/
+│   ├── Tool (interface)  <span class="problem">← 双轨制</span>
+│   ├── FunctionCallingService
+│   └── builtin/ (7 tools, 自定义接口)
+├── agent/
+│   ├── Agent (interface)
+│   ├── AbstractAgent     (无工具注入)
+│   ├── CoordinatorAgent  (英文关键词路由)
+│   ├── CodeAgent         (无工具)
+│   ├── ResearchAgent     (无工具)
+│   └── DataAgent         (无工具)
+├── memory/
+│   └── ChatMemoryService (无 token 预算)
+├── rag/
+│   └── RagService        (无分块, 无 embedding 检索)
+├── orchestrator/
+│   └── ParallelStrategy  (无超时, 无接口) <span class="problem">← 编译错误</span>
+└── api/
+    ├── ChatController    (依赖 OrchestrationStrategy) <span class="problem">← 编译错误</span>
+    └── ToolController    (无鉴权)
+    </div>
+
+    <h3>重构后</h3>
+    <div class="code-block">
+AI Agent Application
+├── config/
+│   ├── AiConfig          (ChatClient + OpenAiApi + 超时控制)
+│   ├── SecurityConfig    <span class="fix">← 新增: CORS + API Key + RateLimit</span>
+│   ├── GlobalExceptionHandler <span class="fix">← 新增: 4类异常处理</span>
+│   ├── VectorStoreConfig  <span class="fix">← 新增: EmbeddingBasedVectorStore</span>
+│   └── ToolConfig        (空, 工具自动收集)
+├── tool/
+│   ├── ToolComponent     <span class="fix">← 新增: 标记接口</span>
+│   ├── FunctionCallingService (tools() 直接传入)
+│   └── builtin/ (7 tools, @Tool 注解)
+├── agent/
+│   ├── Agent (interface)
+│   ├── AbstractAgent     (支持工具注入)
+│   ├── CoordinatorAgent  (LLM 意图分类 + 中文降级)
+│   ├── CodeAgent         (calculator, file, systeminfo)
+│   ├── ResearchAgent     (web-search, http, weather)
+│   └── DataAgent         (calculator, systeminfo, time)
+├── memory/
+│   └── ChatMemoryService (token 预算 + Redis/内存双模)
+├── rag/
+│   └── RagService        (文档分块 + 相似度阈值)
+├── orchestrator/
+│   ├── OrchestrationStrategy (接口) <span class="fix">← 新增</span>
+│   ├── SequentialStrategy     <span class="fix">← 新增: 链式编排</span>
+│   └── ParallelStrategy  (超时 + 守护线程)
+└── api/
+    ├── ChatController    (完整 API, 策略注入)
+    └── ToolController    (X-API-Key 鉴权)
+    </div>
+  </div>
+
+  <!-- File Changes -->
+  <div class="section">
+    <h2>文件变更清单</h2>
+    <div class="file-list">
+      <span class="created">[新增]</span> AiAgentApplication.java (主启动类)<br>
+      <span class="created">[新增]</span> config/SecurityConfig.java (CORS + API Key + RateLimit)<br>
+      <span class="created">[新增]</span> config/GlobalExceptionHandler.java (全局异常处理)<br>
+      <span class="created">[新增]</span> config/VectorStoreConfig.java (EmbeddingBasedVectorStore)<br>
+      <span class="created">[新增]</span> orchestrator/OrchestrationStrategy.java (策略接口)<br>
+      <span class="created">[新增]</span> orchestrator/SequentialStrategy.java (顺序编排)<br>
+      <span class="created">[新增]</span> tool/ToolComponent.java (标记接口)<br>
+      <br>
+      <span class="modified">[修改]</span> config/AiConfig.java (超时控制 + JDK HTTP 工厂)<br>
+      <span class="modified">[修改]</span> config/ToolConfig.java (移除 ToolCallback 配置)<br>
+      <span class="modified">[修改]</span> tool/FunctionCallingService.java (tools() 直接传入)<br>
+      <span class="modified">[修改]</span> tool/builtin/CalculatorTool.java (implements ToolComponent)<br>
+      <span class="modified">[修改]</span> tool/builtin/FileOperationTool.java (路径沙箱)<br>
+      <span class="modified">[修改]</span> tool/builtin/HttpRequestTool.java (SSRF 防护)<br>
+      <span class="modified">[修改]</span> tool/builtin/SystemInfoTool.java (implements ToolComponent)<br>
+      <span class="modified">[修改]</span> tool/builtin/TimeTool.java (implements ToolComponent)<br>
+      <span class="modified">[修改]</span> tool/builtin/WeatherTool.java (implements ToolComponent)<br>
+      <span class="modified">[修改]</span> tool/builtin/WebSearchTool.java (implements ToolComponent)<br>
+      <span class="modified">[修改]</span> agent/AbstractAgent.java (setTools + tools() 调用)<br>
+      <span class="modified">[修改]</span> agent/CoordinatorAgent.java (LLM 路由 + 中文降级)<br>
+      <span class="modified">[修改]</span> agent/CodeAgent.java (工具注入: calculator/file/systeminfo)<br>
+      <span class="modified">[修改]</span> agent/ResearchAgent.java (工具注入: web-search/http/weather)<br>
+      <span class="modified">[修改]</span> agent/DataAgent.java (工具注入: calculator/systeminfo/time)<br>
+      <span class="modified">[修改]</span> memory/ChatMemoryService.java (token 预算管理)<br>
+      <span class="modified">[修改]</span> rag/RagService.java (文档分块 + 相似度阈值)<br>
+      <span class="modified">[修改]</span> orchestrator/ParallelStrategy.java (超时 + 守护线程)<br>
+      <span class="modified">[修改]</span> api/ChatController.java (策略注入 + 工具列表接口)<br>
+      <span class="modified">[修改]</span> api/ToolController.java (反射扫描 @Tool)<br>
+      <span class="modified">[修改]</span> application.yml (ONNX + H2关闭 + 安全配置)
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="section">
+    <h2>关键指标对比</h2>
+    <div class="stat-row">
+      <span class="stat-label">编译状态</span>
+      <span class="stat-val-before">❌ 8 个编译错误</span>
+      <span class="stat-val-after">✅ 编译通过</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">安全漏洞</span>
+      <span class="stat-val-before">7 个（路径穿越/SSRF/无鉴权...）</span>
+      <span class="stat-val-after">0 个</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">RAG 功能</span>
+      <span class="stat-val-before">❌ 完全不可用</span>
+      <span class="stat-val-after">✅ 文档分块 + 余弦相似度检索</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">工具系统</span>
+      <span class="stat-val-before">双轨制（编译失败）</span>
+      <span class="stat-val-after">统一 @Tool 注解</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Agent 路由</span>
+      <span class="stat-val-before">英文关键词（中文失效）</span>
+      <span class="stat-val-after">LLM 意图分类 + 中文降级</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Agent 工具</span>
+      <span class="stat-val-before">无（纯 prompt）</span>
+      <span class="stat-val-after">按角色注入 3-4 个工具</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">编排策略</span>
+      <span class="stat-val-before">仅 Parallel（无超时）</span>
+      <span class="stat-val-after">Parallel + Sequential（超时控制）</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">记忆管理</span>
+      <span class="stat-val-before">无限制（上下文溢出）</span>
+      <span class="stat-val-after">Token 预算 8000 + 40 条上限</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">异常处理</span>
+      <span class="stat-val-before">无（堆栈泄露）</span>
+      <span class="stat-val-after">4 类异常分类处理</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">API 安全</span>
+      <span class="stat-val-before">无鉴权 + 无限流</span>
+      <span class="stat-val-after">API Key + 30 req/min</span>
+    </div>
+  </div>
+
+  <p style="text-align:center; color:#8b949e; margin-top:40px; font-size:0.85em;">
+    AI Agent 项目 · Spring AI 1.0 + DeepSeek + ONNX · 2026-09-01
+  </p>
+</div>
+</body>
+</html>

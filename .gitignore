@@ -1,0 +1,13 @@
+﻿target/
+*.class
+*.jar
+*.war
+*.log
+onnx-cache/
+workspace/
+.idea/
+*.iml
+.mvn/wrapper/maven-wrapper.jar
+.DS_Store
+Thumbs.db
+application-local.yml
