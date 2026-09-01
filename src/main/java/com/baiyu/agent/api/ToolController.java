@@ -47,7 +47,9 @@ public class ToolController {
                             Object result = method.invoke(tool, input);
                             return Map.of("tool", toolName, "result", result != null ? result.toString() : "empty result");
                         } catch (Exception e) {
-                            return Map.of("tool", toolName, "result", "Execution error: " + e.getCause().getMessage());
+                            Throwable cause = e.getCause();
+                            String errMsg = cause != null ? cause.getMessage() : e.getMessage();
+                            return Map.of("tool", toolName, "result", "Execution error: " + (errMsg != null ? errMsg : "unknown"));
                         }
                     }
                 }

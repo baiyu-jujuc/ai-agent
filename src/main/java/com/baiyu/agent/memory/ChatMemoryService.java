@@ -32,6 +32,9 @@ public class ChatMemoryService {
     @Value("${agent.memory.max-messages:40}")
     private int maxMessages;
 
+    @Value("${agent.memory.max-conversations:100}")
+    private int maxConversations;
+
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Map<String, LinkedList<Message>> conversations = new ConcurrentHashMap<>();
@@ -99,6 +102,11 @@ public class ChatMemoryService {
         if (useRedis()) {
             addToRedisHistory(conversationId, message);
             return;
+        }
+        if (conversations.size() >= maxConversations && !conversations.containsKey(conversationId)) {
+            String oldest = conversations.keySet().iterator().next();
+            conversations.remove(oldest);
+            log.info("Evicted oldest conversation: {} (limit: {})", oldest, maxConversations);
         }
         conversations.computeIfAbsent(conversationId, k -> new LinkedList<>()).add(message);
         trimHistory(conversationId);

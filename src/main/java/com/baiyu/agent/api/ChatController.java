@@ -50,9 +50,17 @@ public class ChatController {
         this.strategies = strategies;
     }
 
+    private static final int MAX_MESSAGE_LENGTH = 10000;
+
     @PostMapping("/simple")
     public Map<String, Object> chat(@RequestBody Map<String, String> request) {
         String message = request.get("message");
+        if (message == null || message.isBlank()) {
+            throw new IllegalArgumentException("message 不能为空");
+        }
+        if (message.length() > MAX_MESSAGE_LENGTH) {
+            throw new IllegalArgumentException("message 超过最大长度限制 (" + MAX_MESSAGE_LENGTH + " 字符)");
+        }
         String conversationId = request.getOrDefault("conversationId", "default");
         String model = request.getOrDefault("model", "deepseek-v4-flash");
         boolean useTools = Boolean.parseBoolean(request.getOrDefault("useTools", "false"));
@@ -88,6 +96,12 @@ public class ChatController {
     public Flux<String> streamChat(@RequestParam String message,
                                    @RequestParam(defaultValue = "default") String conversationId,
                                    @RequestParam(defaultValue = "deepseek-v4-flash") String model) {
+        if (message == null || message.isBlank()) {
+            throw new IllegalArgumentException("message 不能为空");
+        }
+        if (message.length() > MAX_MESSAGE_LENGTH) {
+            throw new IllegalArgumentException("message 超过最大长度限制");
+        }
         memoryService.addUserMessage(conversationId, message);
         List<Message> history = memoryService.getHistory(conversationId);
 
@@ -105,6 +119,12 @@ public class ChatController {
     public Map<String, Object> chatWithAgent(@PathVariable String agentName,
                                              @RequestBody Map<String, String> request) {
         String message = request.get("message");
+        if (message == null || message.isBlank()) {
+            throw new IllegalArgumentException("message 不能为空");
+        }
+        if (message.length() > MAX_MESSAGE_LENGTH) {
+            throw new IllegalArgumentException("message 超过最大长度限制");
+        }
         String conversationId = request.getOrDefault("conversationId", "default");
         String model = request.getOrDefault("model", "deepseek-v4-flash");
 

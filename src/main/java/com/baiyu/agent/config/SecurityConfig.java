@@ -6,11 +6,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.servlet.HandlerInterceptor;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
+import jakarta.annotation.PostConstruct;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -24,11 +27,23 @@ public class SecurityConfig implements WebMvcConfigurer {
     @Value("${agent.security.api-key:dev-key-change-in-production}")
     private String apiKey;
 
-    @Value("${agent.security.protected-paths:/api/tools/**}")
+    @Value("${agent.security.protected-paths:/api/**}")
     private String protectedPaths;
 
     @Value("${agent.security.rate-limit-per-minute:30}")
     private int rateLimitPerMinute;
+
+    @Value("${agent.security.allowed-origins:http://localhost:8080,http://localhost:3000,http://127.0.0.1:8080}")
+    private String allowedOrigins;
+
+    private RateLimitInterceptor rateLimitInterceptor;
+
+    @PostConstruct
+    public void init() {
+        this.rateLimitInterceptor = new RateLimitInterceptor(rateLimitPerMinute);
+        log.info("SecurityConfig initialized: protectedPaths={}, rateLimit={}/min, origins={}",
+                protectedPaths, rateLimitPerMinute, allowedOrigins);
+    }
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
@@ -36,18 +51,30 @@ public class SecurityConfig implements WebMvcConfigurer {
             registry.addInterceptor(new ApiKeyInterceptor(apiKey))
                     .addPathPatterns(path.trim());
         }
-        registry.addInterceptor(new RateLimitInterceptor(rateLimitPerMinute))
-                .addPathPatterns("/api/**");
+        if (rateLimitInterceptor != null) {
+            registry.addInterceptor(rateLimitInterceptor)
+                    .addPathPatterns("/api/**");
+        }
     }
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
+        String[] origins = Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toArray(String[]::new);
         registry.addMapping("/api/**")
-                .allowedOriginPatterns("*")
+                .allowedOrigins(origins)
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
                 .allowCredentials(true)
                 .maxAge(3600);
+        log.info("CORS allowed origins: {}", Arrays.toString(origins));
+    }
+
+    @Scheduled(fixedRate = 300000)
+    public void cleanupRateLimitBuckets() {
+        rateLimitInterceptor.cleanup();
     }
 
     private static class ApiKeyInterceptor implements HandlerInterceptor {
@@ -96,6 +123,17 @@ public class SecurityConfig implements WebMvcConfigurer {
                 return false;
             }
             return true;
+        }
+
+        void cleanup() {
+            long now = System.currentTimeMillis();
+            long expiry = TimeUnit.MINUTES.toMillis(2);
+            int before = buckets.size();
+            buckets.entrySet().removeIf(e -> now - e.getValue().windowStart > expiry);
+            int removed = before - buckets.size();
+            if (removed > 0) {
+                log.debug("Rate limiter cleanup: removed {} expired buckets (remaining: {})", removed, buckets.size());
+            }
         }
     }
 
