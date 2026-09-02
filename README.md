@@ -8,7 +8,8 @@
 |------|------|
 | 框架 | Spring Boot 3.4 + Spring AI 1.0 |
 | LLM | DeepSeek V4 (OpenAI 兼容端点) |
-| 向量存储 | Simple Vector Store (开发) → Qdrant (生产) |
+| 向量存储 | InMemory (开发) → Qdrant (生产) |
+| 对话记忆 | InMemory (开发) → Redis (生产) |
 | 数据库 | H2 (开发) → PostgreSQL (生产) |
 | 流式输出 | SSE (Server-Sent Events) |
 | 构建 | Maven 3.9 |
@@ -22,7 +23,8 @@
 - **RAG 管道**: 文档索引 + 检索增强生成
 - **多模型支持**: Flash (低成本) / Pro (高性能) / Vision (图像)
 - **SSE 流式输出**: 实时响应
-- **对话记忆**: 滑动窗口上下文管理
+- **对话记忆**: 滑动窗口上下文管理 (InMemory / Redis 双模式)
+- **存储后端切换**: 一键切换 Dev (InMemory) ↔ Prod (Qdrant + Redis)
 
 ## 快速开始
 
@@ -44,8 +46,11 @@ cp .env.example .env
 # 编译
 mvn clean compile
 
-# 运行
+# 运行 (开发模式: InMemory 存储, 无需 Docker)
 mvn spring-boot:run
+
+# 运行 (生产模式: Qdrant + Redis, 需先启动 Docker)
+$env:VECTOR_STORE_TYPE="qdrant"; $env:MEMORY_TYPE="redis"; mvn spring-boot:run
 ```
 
 ### 3. 访问
@@ -54,7 +59,20 @@ mvn spring-boot:run
 - Chat API: http://localhost:8080/api/chat/simple
 - 模型列表: http://localhost:8080/api/chat/models
 - 工具列表: http://localhost:8080/api/chat/tools
+- 存储状态: http://localhost:8080/api/chat/storage-status
 - 健康检查: http://localhost:8080/actuator/health
+
+### 存储后端配置
+
+| 环境变量 | 默认值 | 说明 |
+|---------|--------|------|
+| `VECTOR_STORE_TYPE` | `memory` | 向量存储: `memory` (开发) / `qdrant` (生产) |
+| `MEMORY_TYPE` | `memory` | 对话记忆: `memory` (开发) / `redis` (生产) |
+| `QDRANT_HOST` | `localhost` | Qdrant 地址 |
+| `QDRANT_PORT` | `6333` | Qdrant 端口 |
+| `QDRANT_INIT_SCHEMA` | `false` | 是否自动创建 Qdrant collection |
+| `REDIS_HOST` | `localhost` | Redis 地址 |
+| `REDIS_PORT` | `6379` | Redis 端口 |
 
 ## API 示例
 
@@ -136,16 +154,33 @@ src/main/java/com/baiyu/agent/
 | deepseek-v4-pro | 复杂任务 | 最强推理能力，1M 上下文 |
 | deepseek-v4-flash-vision-exp | 图像输入 | 支持图片理解 (实验) |
 
-## Docker 部署 (可选)
+## Docker 部署
+
+### 启动 Qdrant + Redis
+
+```bash
+# 启动 Qdrant 向量库 + Redis 缓存
+docker-compose up -d qdrant redis
+
+# 验证
+curl http://localhost:6333/healthz    # Qdrant
+redis-cli ping                         # Redis
+
+# 切换到生产模式
+$env:VECTOR_STORE_TYPE="qdrant"
+$env:MEMORY_TYPE="redis"
+$env:QDRANT_INIT_SCHEMA="true"        # 首次启动时创建 collection
+mvn spring-boot:run
+```
+
+### 完整 Docker 部署
 
 ```bash
 # 设置环境变量
 export DEEPSEEK_API_KEY=your-api-key
 
-# 启动所有服务
+# 启动所有服务 (AI Agent + Qdrant + Redis)
 docker-compose up -d
-
-# 包含: AI Agent + Qdrant 向量库 + Redis 缓存
 ```
 
 ## 安全说明

@@ -1,13 +1,29 @@
 package com.baiyu.agent.config;
 
+import io.netty.channel.ChannelOption;
+import io.netty.handler.timeout.ReadTimeoutHandler;
+import io.netty.handler.timeout.WriteTimeoutHandler;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.document.MetadataMode;
+import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.openai.OpenAiEmbeddingModel;
+import org.springframework.ai.openai.OpenAiEmbeddingOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.netty.http.client.HttpClient;
+
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 
 @Configuration
 public class AiConfig {
@@ -27,11 +43,35 @@ public class AiConfig {
     @Value("${spring.ai.openai.chat.options.max-tokens:4096}")
     private int maxTokens;
 
+    @Value("${spring.ai.openai.embedding.options.model:text-embedding-3-small}")
+    private String embeddingModel;
+
+    @Value("${agent.timeout-seconds:60}")
+    private int timeoutSeconds;
+
     @Bean
     public OpenAiApi openAiApi() {
+        // RestClient: JDK-based factory with 60s read timeout (no Netty)
+        SimpleClientHttpRequestFactory restFactory = new SimpleClientHttpRequestFactory();
+        restFactory.setConnectTimeout(15000);
+        restFactory.setReadTimeout(timeoutSeconds * 1000);
+
+        // WebClient: Netty with 60s read/write timeout (for streaming)
+        HttpClient httpClient = HttpClient.create()
+                .responseTimeout(Duration.ofSeconds(timeoutSeconds))
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 15000)
+                .doOnConnected(conn ->
+                        conn.addHandlerLast(new ReadTimeoutHandler(timeoutSeconds, TimeUnit.SECONDS))
+                                .addHandlerLast(new WriteTimeoutHandler(timeoutSeconds, TimeUnit.SECONDS))
+                );
+
         return OpenAiApi.builder()
                 .baseUrl(baseUrl)
                 .apiKey(apiKey)
+                .restClientBuilder(RestClient.builder()
+                        .requestFactory(restFactory))
+                .webClientBuilder(WebClient.builder()
+                        .clientConnector(new ReactorClientHttpConnector(httpClient)))
                 .build();
     }
 
@@ -50,6 +90,15 @@ public class AiConfig {
                 .openAiApi(openAiApi)
                 .defaultOptions(options)
                 .build();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(EmbeddingModel.class)
+    public EmbeddingModel embeddingModel(OpenAiApi openAiApi) {
+        return new OpenAiEmbeddingModel(openAiApi, MetadataMode.EMBED,
+                OpenAiEmbeddingOptions.builder()
+                        .model(embeddingModel)
+                        .build());
     }
 
     @Bean

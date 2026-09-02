@@ -1,23 +1,17 @@
 package com.baiyu.agent.tool.builtin;
 
-import com.baiyu.agent.tool.Tool;
+import com.baiyu.agent.tool.ToolComponent;
+import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Component;
+
 import java.lang.management.ManagementFactory;
 import java.lang.management.RuntimeMXBean;
 import java.util.Properties;
 
 @Component
-public class SystemInfoTool implements Tool {
+public class SystemInfoTool implements ToolComponent {
 
-    @Override
-    public String getName() { return "systeminfo"; }
-
-    @Override
-    public String getDescription() {
-        return "Returns system information including OS, Java version, and runtime stats.";
-    }
-
-    @Override
+    @Tool(name = "systeminfo", description = "Returns system information including OS, Java version, and runtime stats.")
     public String execute(String input) {
         StringBuilder sb = new StringBuilder();
         Properties props = System.getProperties();

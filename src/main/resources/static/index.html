@@ -94,6 +94,10 @@
             </div>
         </div>
         <div class="sidebar-section">
+            <h3>API Key (鉴权)</h3>
+            <input class="model-select" id="apiKeyInput" type="password" placeholder="输入 X-API-Key">
+        </div>
+        <div class="sidebar-section">
             <h3>Agent 列表</h3>
             <div class="agent-list" id="agentList">
                 <div class="agent-item active" data-agent="coordinator"><div class="agent-dot"></div>Coordinator</div>
@@ -108,6 +112,23 @@
             <div class="agent-list">
                 <div class="agent-item" id="newChatBtn"><div class="agent-dot" style="background:var(--accent)"></div>新对话</div>
                 <div class="agent-item" id="clearChatBtn"><div class="agent-dot" style="background:var(--red)"></div>清空记录</div>
+            </div>
+        </div>
+        <div class="sidebar-section" style="margin-top:auto">
+            <h3>存储后端</h3>
+            <div style="display:flex;flex-direction:column;gap:6px;font-size:12px">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <span style="color:var(--text-dim)">记忆</span>
+                    <span id="memoryBackend" style="color:var(--yellow)">检测中...</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <span style="color:var(--text-dim)">向量库</span>
+                    <span id="vectorBackend" style="color:var(--yellow)">检测中...</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <span style="color:var(--text-dim)">对话数</span>
+                    <span id="convCount" style="color:var(--text)">0</span>
+                </div>
             </div>
         </div>
     </div>
@@ -140,6 +161,22 @@
         let useTools = false;
         let selectedModel = 'deepseek-v4-flash';
 
+        // API Key 管理：受保护接口需携带 X-API-Key 请求头
+        const apiKeyInput = document.getElementById('apiKeyInput');
+        apiKeyInput.value = localStorage.getItem('agentApiKey') || '';
+        apiKeyInput.addEventListener('change', () => {
+            localStorage.setItem('agentApiKey', apiKeyInput.value.trim());
+        });
+
+        async function apiFetch(url, options = {}) {
+            options.headers = Object.assign({}, options.headers, { 'X-API-Key': apiKeyInput.value.trim() });
+            const res = await fetch(url, options);
+            if (res.status === 401) {
+                throw new Error('鉴权失败 (401)：请在左侧填入正确的 API Key');
+            }
+            return res;
+        }
+
         // Model selector
         document.getElementById('modelSelect').addEventListener('change', e => {
             selectedModel = e.target.value;
@@ -170,7 +207,7 @@
 
         // Clear chat
         document.getElementById('clearChatBtn').addEventListener('click', async () => {
-            await fetch('/api/chat/history/' + conversationId, { method: 'DELETE' });
+            await apiFetch('/api/chat/history/' + conversationId, { method: 'DELETE' });
             document.getElementById('messages').innerHTML = '';
             addMessage('assistant', '对话记录已清空。');
         });
@@ -207,13 +244,13 @@
                     ? { message: text, conversationId, model: selectedModel, useTools: 'true' }
                     : { message: text, conversationId, model: selectedModel };
 
-                const res = await fetch(endpoint, {
+                const res = await apiFetch(endpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
                 });
                 const data = await res.json();
-                addMessage('assistant', data.response, data.model || selectedModel);
+                addMessage('assistant', data.response || 'AI 返回空回复', data.model || selectedModel);
             } catch (err) {
                 addMessage('assistant', '请求失败: ' + err.message);
             } finally {
@@ -227,7 +264,7 @@
             div.className = 'msg ' + role;
             let html = '';
             if (meta) html += '<div class="meta">' + meta + '</div>';
-            html += content.replace(/\n/g, '<br>');
+            html += (content || '空回复').replace(/\n/g, '<br>');
             div.innerHTML = html;
             document.getElementById('messages').appendChild(div);
             div.scrollIntoView({ behavior: 'smooth' });
@@ -235,7 +272,7 @@
 
         // Load tools
         async function loadTools() {
-            const res = await fetch('/api/chat/tools');
+            const res = await apiFetch('/api/chat/tools');
             const tools = await res.json();
             const list = document.getElementById('toolList');
             list.innerHTML = '';
@@ -262,7 +299,7 @@
             btn.textContent = '...';
             btn.disabled = true;
             try {
-                const res = await fetch('/api/tools/' + name, {
+                const res = await apiFetch('/api/tools/' + name, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ input: val })
@@ -278,6 +315,29 @@
         }
 
         loadTools();
+        loadStorageStatus();
+
+        async function loadStorageStatus() {
+            try {
+                const res = await apiFetch('/api/chat/storage-status');
+                const data = await res.json();
+                const memEl = document.getElementById('memoryBackend');
+                const vecEl = document.getElementById('vectorBackend');
+                const countEl = document.getElementById('convCount');
+
+                const memType = data.memoryBackend;
+                memEl.textContent = memType === 'redis' ? 'Redis' : 'InMemory';
+                memEl.style.color = memType === 'redis' ? 'var(--green)' : 'var(--yellow)';
+
+                const vecType = data.vectorStoreBackend;
+                vecEl.textContent = vecType === 'qdrant' ? 'Qdrant' : 'InMemory';
+                vecEl.style.color = vecType === 'qdrant' ? 'var(--green)' : 'var(--yellow)';
+
+                countEl.textContent = data.conversations || 0;
+            } catch (err) {
+                console.error('Storage status fetch failed:', err);
+            }
+        }
     </script>
 </body>
 </html>

@@ -1,20 +1,13 @@
 package com.baiyu.agent.tool.builtin;
 
-import com.baiyu.agent.tool.Tool;
+import com.baiyu.agent.tool.ToolComponent;
+import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Component;
 
 @Component
-public class CalculatorTool implements Tool {
+public class CalculatorTool implements ToolComponent {
 
-    @Override
-    public String getName() { return "calculator"; }
-
-    @Override
-    public String getDescription() {
-        return "Evaluates mathematical expressions like '2+3*4', '(1+2)*3', '2^10'";
-    }
-
-    @Override
+    @Tool(name = "calculator", description = "Evaluates mathematical expressions like '2+3*4', '(1+2)*3', '2^10'")
     public String execute(String input) {
         String expression = input.trim();
         try {

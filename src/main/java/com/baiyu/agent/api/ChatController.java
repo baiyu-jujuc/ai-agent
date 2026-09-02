@@ -3,12 +3,15 @@ package com.baiyu.agent.api;
 import com.baiyu.agent.agent.Agent;
 import com.baiyu.agent.agent.CoordinatorAgent;
 import com.baiyu.agent.memory.ChatMemoryService;
+import com.baiyu.agent.orchestrator.OrchestrationStrategy;
+import com.baiyu.agent.rag.RagService;
 import com.baiyu.agent.tool.FunctionCallingService;
-import com.baiyu.agent.tool.ToolRegistry;
+import com.baiyu.agent.tool.ToolComponent;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 
@@ -23,33 +26,41 @@ public class ChatController {
     private final CoordinatorAgent coordinatorAgent;
     private final Map<String, Agent> agents;
     private final ChatMemoryService memoryService;
-    private final ToolRegistry toolRegistry;
+    private final List<ToolComponent> toolComponents;
     private final FunctionCallingService functionCallingService;
+    private final RagService ragService;
+    private final Map<String, OrchestrationStrategy> strategies;
 
-    private static final List<String> AVAILABLE_MODELS = List.of(
-            "deepseek-v4-flash",
-            "deepseek-v4-pro",
-            "deepseek-v4-flash-vision-exp"
-    );
+    private static final int MAX_MESSAGE_LENGTH = 10000;
 
     public ChatController(ChatModel chatModel, ChatClient chatClient,
                          CoordinatorAgent coordinatorAgent,
                          Map<String, Agent> agents,
                          ChatMemoryService memoryService,
-                         ToolRegistry toolRegistry,
-                         FunctionCallingService functionCallingService) {
+                         List<ToolComponent> toolComponents,
+                         FunctionCallingService functionCallingService,
+                         RagService ragService,
+                         Map<String, OrchestrationStrategy> strategies) {
         this.chatModel = chatModel;
         this.chatClient = chatClient;
         this.coordinatorAgent = coordinatorAgent;
         this.agents = agents;
         this.memoryService = memoryService;
-        this.toolRegistry = toolRegistry;
+        this.toolComponents = toolComponents;
         this.functionCallingService = functionCallingService;
+        this.ragService = ragService;
+        this.strategies = strategies;
     }
 
     @PostMapping("/simple")
     public Map<String, Object> chat(@RequestBody Map<String, String> request) {
         String message = request.get("message");
+        if (message == null || message.isBlank()) {
+            throw new IllegalArgumentException("message 不能为空");
+        }
+        if (message.length() > MAX_MESSAGE_LENGTH) {
+            throw new IllegalArgumentException("message 超过最大长度限制 (" + MAX_MESSAGE_LENGTH + " 字符)");
+        }
         String conversationId = request.getOrDefault("conversationId", "default");
         String model = request.getOrDefault("model", "deepseek-v4-flash");
         boolean useTools = Boolean.parseBoolean(request.getOrDefault("useTools", "false"));
@@ -58,10 +69,18 @@ public class ChatController {
         List<Message> history = memoryService.getHistory(conversationId);
 
         String response;
-        if (useTools) {
-            response = functionCallingService.executeWithTools(message, model);
-        } else {
-            response = coordinatorAgent.execute(message, history);
+        try {
+            if (useTools) {
+                response = functionCallingService.executeWithTools(message, model);
+            } else {
+                response = coordinatorAgent.execute(message, history);
+            }
+            if (response == null || response.isBlank()) {
+                response = "AI 返回了空回复，请重试。";
+            }
+        } catch (Exception e) {
+            response = "请求失败: " + e.getClass().getSimpleName() + " — " +
+                    (e.getMessage() != null ? e.getMessage() : "未知错误");
         }
         memoryService.addAssistantMessage(conversationId, response);
 
@@ -75,8 +94,14 @@ public class ChatController {
 
     @GetMapping(value = "/stream")
     public Flux<String> streamChat(@RequestParam String message,
-                                    @RequestParam(defaultValue = "default") String conversationId,
-                                    @RequestParam(defaultValue = "deepseek-v4-flash") String model) {
+                                   @RequestParam(defaultValue = "default") String conversationId,
+                                   @RequestParam(defaultValue = "deepseek-v4-flash") String model) {
+        if (message == null || message.isBlank()) {
+            throw new IllegalArgumentException("message 不能为空");
+        }
+        if (message.length() > MAX_MESSAGE_LENGTH) {
+            throw new IllegalArgumentException("message 超过最大长度限制");
+        }
         memoryService.addUserMessage(conversationId, message);
         return chatClient.prompt()
                 .user(message)
@@ -87,20 +112,28 @@ public class ChatController {
 
     @PostMapping("/agent/{agentName}")
     public Map<String, Object> chatWithAgent(@PathVariable String agentName,
-                                              @RequestBody Map<String, String> request) {
+                                             @RequestBody Map<String, String> request) {
         String message = request.get("message");
+        if (message == null || message.isBlank()) {
+            throw new IllegalArgumentException("message 不能为空");
+        }
+        if (message.length() > MAX_MESSAGE_LENGTH) {
+            throw new IllegalArgumentException("message 超过最大长度限制");
+        }
         String conversationId = request.getOrDefault("conversationId", "default");
         String model = request.getOrDefault("model", "deepseek-v4-flash");
 
         memoryService.addUserMessage(conversationId, message);
         List<Message> history = memoryService.getHistory(conversationId);
 
-        Agent targetAgent = agents.get(agentName);
-        if (targetAgent == null) {
-            targetAgent = coordinatorAgent;
-        }
+        Agent targetAgent = agents.getOrDefault(agentName, coordinatorAgent);
 
-        String response = targetAgent.execute(message, history);
+        String response;
+        try {
+            response = targetAgent.executeWithModel(message, model, history);
+        } catch (Exception e) {
+            response = "Agent 执行失败: " + e.getMessage();
+        }
         memoryService.addAssistantMessage(conversationId, response);
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -108,6 +141,44 @@ public class ChatController {
         result.put("agent", targetAgent.getName());
         result.put("conversationId", conversationId);
         result.put("model", model);
+        return result;
+    }
+
+    @PostMapping("/orchestrate")
+    public Map<String, Object> orchestrate(@RequestBody Map<String, String> request) {
+        String message = request.get("message");
+        if (message == null || message.isBlank()) {
+            throw new IllegalArgumentException("message 不能为空");
+        }
+        String strategyName = request.getOrDefault("strategy", "sequential");
+        String agentNamesStr = request.getOrDefault("agents", "");
+        String conversationId = request.getOrDefault("conversationId", "default");
+
+        List<String> agentNames = agentNamesStr.isBlank() ?
+                List.of("research", "code", "data") :
+                Arrays.stream(agentNamesStr.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
+
+        OrchestrationStrategy strategy = strategies.getOrDefault(strategyName,
+                strategies.values().iterator().next());
+
+        memoryService.addUserMessage(conversationId, message);
+        List<Message> history = memoryService.getHistory(conversationId);
+
+        Map<String, String> results = strategy.execute(message, history, agentNames);
+
+        StringBuilder combined = new StringBuilder();
+        for (Map.Entry<String, String> entry : results.entrySet()) {
+            combined.append("## ").append(entry.getKey()).append(" Agent\n\n");
+            combined.append(entry.getValue()).append("\n\n---\n");
+        }
+
+        memoryService.addAssistantMessage(conversationId, combined.toString());
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("strategy", strategy.getName());
+        result.put("results", results);
+        result.put("combined", combined.toString());
+        result.put("conversationId", conversationId);
         return result;
     }
 
@@ -123,11 +194,14 @@ public class ChatController {
     @GetMapping("/tools")
     public List<Map<String, String>> getTools() {
         List<Map<String, String>> tools = new ArrayList<>();
-        for (var tool : toolRegistry.getAllTools()) {
-            tools.add(Map.of(
-                    "name", tool.getName(),
-                    "description", tool.getDescription()
-            ));
+        for (ToolComponent tool : toolComponents) {
+            for (var method : tool.getClass().getDeclaredMethods()) {
+                Tool annotation = method.getAnnotation(Tool.class);
+                if (annotation != null) {
+                    String name = annotation.name().isEmpty() ? method.getName() : annotation.name();
+                    tools.add(Map.of("name", name, "description", annotation.description()));
+                }
+            }
         }
         return tools;
     }
@@ -149,5 +223,15 @@ public class ChatController {
     public Map<String, String> clearHistory(@PathVariable String conversationId) {
         memoryService.clearHistory(conversationId);
         return Map.of("status", "cleared", "conversationId", conversationId);
+    }
+
+    @GetMapping("/storage-status")
+    public Map<String, Object> getStorageStatus() {
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("memoryBackend", memoryService.getStorageType());
+        status.put("vectorStoreBackend", ragService.getVectorStoreType());
+        status.put("conversations", memoryService.getConversationIds().size());
+        status.put("timestamp", java.time.Instant.now().toString());
+        return status;
     }
 }

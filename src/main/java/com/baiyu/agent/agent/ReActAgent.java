@@ -1,6 +1,6 @@
 package com.baiyu.agent.agent;
 
-import com.baiyu.agent.tool.ToolRegistry;
+import com.baiyu.agent.tool.ToolComponent;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
@@ -10,50 +10,25 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
-@Component
+@Component("react")
 public class ReActAgent extends AbstractAgent {
 
-    private static final int MAX_ITERATIONS = 5;
-    private final ToolRegistry toolRegistry;
-
-    private static final Pattern ACTION_PATTERN = Pattern.compile(
-            "Action:\\s*(\\w+)\\s*\\n\\s*Input:\\s*(.+)", Pattern.CASE_INSENSITIVE);
-
-    public ReActAgent(ChatClient chatClient, ToolRegistry toolRegistry) {
+    public ReActAgent(ChatClient chatClient, List<ToolComponent> allTools) {
         super(chatClient, """
-                You are a ReAct (Reasoning + Acting) agent. Follow this loop:
-                
-                1. Thought: Think about what to do
-                2. Action: Choose a tool to use (or 'final' to give the final answer)
-                3. Input: The input for the tool
-                
-                Available tools:
-                - calculator: Evaluate math expressions
-                - time: Get current time
-                - systeminfo: Get system information
-                - final: Give the final answer (no tool needed)
-                
-                Format your response EXACTLY as:
-                Thought: <your reasoning>
-                Action: <tool_name>
-                Input: <tool_input>
-                
-                Or when you have the final answer:
-                Thought: <your reasoning>
-                Action: final
-                Input: <your final answer>
+                你是一个 ReAct (推理+行动) Agent。
+                先逐步推理再行动，需要时使用可用工具。
+                框架自动处理工具调用循环：决定调用哪个工具、审查观察结果、
+                继续直到能给出最终答案。用用户的语言回答。
                 """);
-        this.toolRegistry = toolRegistry;
+        setTools(allTools);
     }
 
     @Override
     public String getName() { return "react"; }
 
     @Override
-    public String getDescription() { return "ReAct agent with reasoning-action loop"; }
+    public String getDescription() { return "ReAct agent with reasoning-action loop (native function calling)"; }
 
     @Override
     public String execute(String input, List<Message> context) {
@@ -62,39 +37,12 @@ public class ReActAgent extends AbstractAgent {
         if (context != null && !context.isEmpty()) {
             messages.addAll(context);
         }
+        messages.add(new UserMessage(input));
 
-        String currentInput = input;
-        StringBuilder trace = new StringBuilder();
-
-        for (int i = 0; i < MAX_ITERATIONS; i++) {
-            messages.add(new UserMessage(currentInput));
-
-            String response = chatClient.prompt(new Prompt(messages))
-                    .call()
-                    .content();
-
-            trace.append("--- Iteration ").append(i + 1).append(" ---\n");
-            trace.append(response).append("\n");
-
-            Matcher matcher = ACTION_PATTERN.matcher(response);
-            if (matcher.find()) {
-                String action = matcher.group(1).trim().toLowerCase();
-                String toolInput = matcher.group(2).trim();
-
-                if ("final".equals(action)) {
-                    return toolInput;
-                }
-
-                String toolResult = toolRegistry.executeTool(action, toolInput);
-                trace.append("Tool Result: ").append(toolResult).append("\n\n");
-
-                messages.add(new org.springframework.ai.chat.messages.AssistantMessage(response));
-                currentInput = "Observation: " + toolResult;
-            } else {
-                return response;
-            }
+        var spec = chatClient.prompt(new Prompt(messages));
+        if (!tools.isEmpty()) {
+            spec.tools(tools.toArray());
         }
-
-        return "Max iterations reached.\n\nTrace:\n" + trace;
+        return spec.call().content();
     }
 }

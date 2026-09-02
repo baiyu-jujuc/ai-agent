@@ -1,28 +1,19 @@
 package com.baiyu.agent.tool.builtin;
 
-import com.baiyu.agent.tool.Tool;
+import com.baiyu.agent.tool.ToolComponent;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 @Component
-public class WeatherTool implements Tool {
+public class WeatherTool implements ToolComponent {
 
     private final RestClient restClient = RestClient.create();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Override
-    public String getName() {
-        return "weather";
-    }
-
-    @Override
-    public String getDescription() {
-        return "查询指定城市的天气信息。输入城市名称（中文或英文），例如：北京、Shanghai、Tokyo";
-    }
-
-    @Override
+    @Tool(name = "weather", description = "查询指定城市的天气信息。输入城市名称（中文或英文），例如：北京、Shanghai、Tokyo")
     public String execute(String input) {
         String city = input.trim();
         if (city.isEmpty()) {

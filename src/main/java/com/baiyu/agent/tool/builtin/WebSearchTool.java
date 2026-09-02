@@ -1,8 +1,9 @@
 package com.baiyu.agent.tool.builtin;
 
-import com.baiyu.agent.tool.Tool;
+import com.baiyu.agent.tool.ToolComponent;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -10,22 +11,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Component
-public class WebSearchTool implements Tool {
+public class WebSearchTool implements ToolComponent {
 
     private final RestClient restClient = RestClient.create();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Override
-    public String getName() {
-        return "web-search";
-    }
-
-    @Override
-    public String getDescription() {
-        return "搜索网络信息。输入搜索关键词，返回相关结果摘要";
-    }
-
-    @Override
+    @Tool(name = "web-search", description = "搜索网络信息。输入搜索关键词，返回相关结果摘要")
     public String execute(String input) {
         String query = input.trim();
         if (query.isEmpty()) {

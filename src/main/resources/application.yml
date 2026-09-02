@@ -16,12 +16,26 @@ spring:
   datasource:
     url: jdbc:h2:mem:agentdb
     driver-class-name: org.h2.Driver
-    username: sa
-    password:
+    username: ${H2_USERNAME:sa}
+    password: ${H2_PASSWORD:}
   h2:
     console:
-      enabled: true
+      enabled: ${H2_CONSOLE:false}
       path: /h2-console
+
+  # Redis (Phase 3: chat memory + cache, only used when MEMORY_TYPE=redis)
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 4
+          min-idle: 0
+          max-wait: 2000ms
 
   # Spring AI Configuration
   ai:
@@ -33,11 +47,20 @@ spring:
         options:
           temperature: 0.7
           max-tokens: 4096
-        # Streaming support
         completions-path: /chat/completions
       embedding:
         options:
           model: text-embedding-3-small
+
+    # Qdrant Vector Store (Phase 3: production vector store)
+    vectorstore:
+      qdrant:
+        host: ${QDRANT_HOST:localhost}
+        port: ${QDRANT_PORT:6333}
+        api-key: ${QDRANT_API_KEY:}
+        collection-name: ${QDRANT_COLLECTION:ai-agent-docs}
+        use-tls: false
+        initialize-schema: ${QDRANT_INIT_SCHEMA:false}
 
 # Actuator endpoints
 management:
@@ -48,6 +71,11 @@ management:
   endpoint:
     health:
       show-details: always
+  health:
+    redis:
+      enabled: ${REDIS_HEALTH:false}
+    qdrant:
+      enabled: false
 
 # Custom configuration
 agent:
@@ -59,6 +87,20 @@ agent:
   vision-model: ${VISION_MODEL:deepseek-v4-flash-vision-exp}
   max-iterations: 10
   timeout-seconds: 60
+  # P0 Security: API key auth + file sandbox
+  security:
+    api-key: ${AGENT_API_KEY:dev-key-change-in-production}
+    file-access-dir: ${FILE_ACCESS_DIR:./workspace}
+    # 受保护路径（默认全部 API，含 chat/tools/rag）
+    protected-paths: /api/**
+    # 公开只读接口（仅 GET 生效）
+    public-paths: /api/chat/models,/api/chat/tools,/api/chat/storage-status,/api/agent/**
+  # Phase 3: Storage backend selection
+  storage:
+    # vector-store: memory (dev, no Docker) | qdrant (prod, needs Docker)
+    vector-store: ${VECTOR_STORE_TYPE:memory}
+    # memory: memory (dev, no Docker) | redis (prod, needs Docker)
+    memory: ${MEMORY_TYPE:memory}
 
 logging:
   level:
