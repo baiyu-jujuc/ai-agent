@@ -5,12 +5,20 @@ services:
       - "8080:8080"
     environment:
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
-      - SPRING_PROFILES_ACTIVE=prod
+      - AGENT_API_KEY=${AGENT_API_KEY:-dev-key-change-in-production}
+      - VECTOR_STORE_TYPE=${VECTOR_STORE_TYPE:-qdrant}
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - MEMORY_TYPE=${MEMORY_TYPE:-redis}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - H2_CONSOLE=false
     depends_on:
       - qdrant
       - redis
     networks:
       - agent-network
+    restart: unless-stopped
 
   qdrant:
     image: docker.m.daocloud.io/qdrant/qdrant:latest
@@ -21,6 +29,7 @@ services:
       - qdrant_data:/qdrant/storage
     networks:
       - agent-network
+    restart: unless-stopped
 
   redis:
     image: docker.m.daocloud.io/library/redis:7-alpine
@@ -28,8 +37,10 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     networks:
       - agent-network
+    restart: unless-stopped
 
 volumes:
   qdrant_data:

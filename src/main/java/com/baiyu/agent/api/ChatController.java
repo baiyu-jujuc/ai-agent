@@ -31,8 +31,6 @@ public class ChatController {
     private final RagService ragService;
     private final Map<String, OrchestrationStrategy> strategies;
 
-    private static final int MAX_MESSAGE_LENGTH = 10000;
-
     public ChatController(ChatModel chatModel, ChatClient chatClient,
                          CoordinatorAgent coordinatorAgent,
                          Map<String, Agent> agents,
@@ -52,6 +50,8 @@ public class ChatController {
         this.strategies = strategies;
     }
 
+    private static final int MAX_MESSAGE_LENGTH = 10000;
+
     @PostMapping("/simple")
     public Map<String, Object> chat(@RequestBody Map<String, String> request) {
         String message = request.get("message");
@@ -65,13 +65,13 @@ public class ChatController {
         String model = request.getOrDefault("model", "deepseek-v4-flash");
         boolean useTools = Boolean.parseBoolean(request.getOrDefault("useTools", "false"));
 
-        memoryService.addUserMessage(conversationId, message);
         List<Message> history = memoryService.getHistory(conversationId);
+        memoryService.addUserMessage(conversationId, message);
 
         String response;
         try {
             if (useTools) {
-                response = functionCallingService.executeWithTools(message, model);
+                response = functionCallingService.executeWithTools(message, model, history);
             } else {
                 response = coordinatorAgent.execute(message, history);
             }
@@ -102,12 +102,19 @@ public class ChatController {
         if (message.length() > MAX_MESSAGE_LENGTH) {
             throw new IllegalArgumentException("message 超过最大长度限制");
         }
+        List<Message> history = memoryService.getHistory(conversationId);
         memoryService.addUserMessage(conversationId, message);
+
+        StringBuilder reply = new StringBuilder();
         return chatClient.prompt()
+                .messages(history)
                 .user(message)
                 .options(ChatOptions.builder().model(model).build())
                 .stream()
-                .content();
+                .content()
+                .doOnNext(reply::append)
+                .doOnComplete(() -> memoryService.addAssistantMessage(conversationId, reply.toString()))
+                .doOnError(e -> memoryService.addAssistantMessage(conversationId, "[stream error] " + e.getMessage()));
     }
 
     @PostMapping("/agent/{agentName}")
@@ -123,10 +130,13 @@ public class ChatController {
         String conversationId = request.getOrDefault("conversationId", "default");
         String model = request.getOrDefault("model", "deepseek-v4-flash");
 
-        memoryService.addUserMessage(conversationId, message);
         List<Message> history = memoryService.getHistory(conversationId);
+        memoryService.addUserMessage(conversationId, message);
 
-        Agent targetAgent = agents.getOrDefault(agentName, coordinatorAgent);
+        Agent targetAgent = agents.get(agentName);
+        if (targetAgent == null) {
+            targetAgent = coordinatorAgent;
+        }
 
         String response;
         try {
@@ -145,41 +155,45 @@ public class ChatController {
     }
 
     @PostMapping("/orchestrate")
-    public Map<String, Object> orchestrate(@RequestBody Map<String, String> request) {
-        String message = request.get("message");
-        if (message == null || message.isBlank()) {
+    public Map<String, Object> orchestrate(@RequestBody Map<String, Object> request) {
+        String input = (String) request.get("message");
+        if (input == null || input.isBlank()) {
             throw new IllegalArgumentException("message 不能为空");
         }
-        String strategyName = request.getOrDefault("strategy", "sequential");
-        String agentNamesStr = request.getOrDefault("agents", "");
-        String conversationId = request.getOrDefault("conversationId", "default");
+        if (input.length() > MAX_MESSAGE_LENGTH) {
+            throw new IllegalArgumentException("message 超过最大长度限制 (" + MAX_MESSAGE_LENGTH + " 字符)");
+        }
+        String strategyName = (String) request.getOrDefault("strategy", "sequential");
+        @SuppressWarnings("unchecked")
+        List<String> agentNames = (List<String>) request.getOrDefault("agents", List.of("code", "research"));
+        String conversationId = (String) request.getOrDefault("conversationId", "default");
 
-        List<String> agentNames = agentNamesStr.isBlank() ?
-                List.of("research", "code", "data") :
-                Arrays.stream(agentNamesStr.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
-
-        OrchestrationStrategy strategy = strategies.getOrDefault(strategyName,
-                strategies.values().iterator().next());
-
-        memoryService.addUserMessage(conversationId, message);
-        List<Message> history = memoryService.getHistory(conversationId);
-
-        Map<String, String> results = strategy.execute(message, history, agentNames);
-
-        StringBuilder combined = new StringBuilder();
-        for (Map.Entry<String, String> entry : results.entrySet()) {
-            combined.append("## ").append(entry.getKey()).append(" Agent\n\n");
-            combined.append(entry.getValue()).append("\n\n---\n");
+        OrchestrationStrategy strategy = strategies.get(strategyName);
+        if (strategy == null) {
+            return Map.of("error", "Unknown strategy: " + strategyName + ". Available: " + strategies.keySet());
         }
 
-        memoryService.addAssistantMessage(conversationId, combined.toString());
+        List<Message> history = memoryService.getHistory(conversationId);
+        memoryService.addUserMessage(conversationId, input);
+        Map<String, String> results = strategy.execute(input, history, agentNames);
+
+        String combined = results.values().stream()
+                .reduce((a, b) -> a + "\n\n---\n\n" + b)
+                .orElse("No results");
+        memoryService.addAssistantMessage(conversationId, combined);
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("strategy", strategy.getName());
-        result.put("results", results);
-        result.put("combined", combined.toString());
+        result.put("strategy", strategyName);
+        result.put("agentResults", results);
         result.put("conversationId", conversationId);
         return result;
+    }
+
+    @GetMapping("/strategies")
+    public List<Map<String, String>> getStrategies() {
+        return strategies.values().stream()
+                .map(s -> Map.of("name", s.getName()))
+                .toList();
     }
 
     @GetMapping("/models")
@@ -193,17 +207,17 @@ public class ChatController {
 
     @GetMapping("/tools")
     public List<Map<String, String>> getTools() {
-        List<Map<String, String>> tools = new ArrayList<>();
-        for (ToolComponent tool : toolComponents) {
+        List<Map<String, String>> result = new ArrayList<>();
+        for (Object tool : toolComponents) {
             for (var method : tool.getClass().getDeclaredMethods()) {
-                Tool annotation = method.getAnnotation(Tool.class);
-                if (annotation != null) {
-                    String name = annotation.name().isEmpty() ? method.getName() : annotation.name();
-                    tools.add(Map.of("name", name, "description", annotation.description()));
+                Tool t = method.getAnnotation(Tool.class);
+                if (t != null) {
+                    String name = t.name().isEmpty() ? method.getName() : t.name();
+                    result.add(Map.of("name", name, "description", t.description()));
                 }
             }
         }
-        return tools;
+        return result;
     }
 
     @GetMapping("/history/{conversationId}")
@@ -234,4 +248,5 @@ public class ChatController {
         status.put("timestamp", java.time.Instant.now().toString());
         return status;
     }
+
 }

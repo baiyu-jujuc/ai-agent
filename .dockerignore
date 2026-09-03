@@ -1,0 +1,13 @@
+target/
+.idea/
+*.iml
+.git/
+.gitignore
+.env
+onnx-cache/
+workspace/
+*.md
+*.html
+*.txt
+codex-zh-CN/
+draft_*/

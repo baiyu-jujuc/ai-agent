@@ -1,12 +1,16 @@
-server:
-  port: 8080
+﻿server:
+  port: ${SERVER_PORT:8080}
   servlet:
     encoding:
       charset: UTF-8
       enabled: true
       force: true
+    context-path: ${SERVER_CONTEXT_PATH:/}
+
   tomcat:
     uri-encoding: UTF-8
+    max-http-form-post-size: 20KB
+    max-swallow-size: 20KB
 
 spring:
   application:
@@ -87,7 +91,7 @@ agent:
   vision-model: ${VISION_MODEL:deepseek-v4-flash-vision-exp}
   max-iterations: 10
   timeout-seconds: 60
-  # P0 Security: API key auth + file sandbox
+  # P0 Security: API key auth + file sandbox + rate limit + CORS
   security:
     api-key: ${AGENT_API_KEY:dev-key-change-in-production}
     file-access-dir: ${FILE_ACCESS_DIR:./workspace}
@@ -95,6 +99,15 @@ agent:
     protected-paths: /api/**
     # 公开只读接口（仅 GET 生效）
     public-paths: /api/chat/models,/api/chat/tools,/api/chat/storage-status,/api/agent/**
+    # 单客户端每分钟请求上限，超出返回 429
+    rate-limit-per-minute: ${RATE_LIMIT:30}
+    # CORS 允许来源
+    allowed-origins: ${ALLOWED_ORIGINS:http://localhost:8080,http://localhost:3000,http://127.0.0.1:8080}
+  # 对话记忆预算：超出后裁剪最早的消息 / 淘汰最久未用的会话
+  memory:
+    max-tokens: ${MEMORY_MAX_TOKENS:8000}
+    max-messages: ${MEMORY_MAX_MESSAGES:40}
+    max-conversations: ${MAX_CONVERSATIONS:100}
   # Phase 3: Storage backend selection
   storage:
     # vector-store: memory (dev, no Docker) | qdrant (prod, needs Docker)

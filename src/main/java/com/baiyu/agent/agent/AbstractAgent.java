@@ -14,7 +14,7 @@ public abstract class AbstractAgent implements Agent {
 
     protected final ChatClient chatClient;
     protected final String systemPrompt;
-    protected List<?> tools = List.of();
+    protected Object[] agentTools = new Object[0];
 
     protected AbstractAgent(ChatClient chatClient, String systemPrompt) {
         this.chatClient = chatClient;
@@ -22,25 +22,15 @@ public abstract class AbstractAgent implements Agent {
     }
 
     public void setTools(List<?> tools) {
-        this.tools = tools != null ? tools : List.of();
+        this.agentTools = tools != null ? tools.toArray() : new Object[0];
     }
 
     @Override
     public String execute(String input, List<Message> context) {
-        List<Message> messages = new ArrayList<>();
-        messages.add(new SystemMessage(systemPrompt));
-        if (context != null) {
-            messages.addAll(context);
-        }
-        messages.add(new UserMessage(input));
-
-        var spec = chatClient.prompt(new Prompt(messages));
-        if (!tools.isEmpty()) {
-            spec.tools(tools.toArray());
-        }
-        return spec.call().content();
+        return executeWithModel(input, null, context);
     }
 
+    @Override
     public String executeWithModel(String input, String model, List<Message> context) {
         List<Message> messages = new ArrayList<>();
         messages.add(new SystemMessage(systemPrompt));
@@ -49,10 +39,12 @@ public abstract class AbstractAgent implements Agent {
         }
         messages.add(new UserMessage(input));
 
-        var spec = chatClient.prompt(new Prompt(messages))
-                .options(ChatOptions.builder().model(model).build());
-        if (!tools.isEmpty()) {
-            spec.tools(tools.toArray());
+        var spec = chatClient.prompt(new Prompt(messages));
+        if (model != null && !model.isEmpty()) {
+            spec.options(ChatOptions.builder().model(model).build());
+        }
+        if (agentTools.length > 0) {
+            spec.tools(agentTools);
         }
         return spec.call().content();
     }

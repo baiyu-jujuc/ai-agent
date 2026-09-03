@@ -1,343 +1,423 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Agent - 多功能智能体</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        :root {
-            --bg: #0f0f0f;
-            --sidebar: #1a1a2e;
-            --card: #16213e;
-            --border: #233;
-            --text: #e0e0e0;
-            --text-dim: #888;
-            --accent: #4a9eff;
-            --accent-dim: #2a6ec0;
-            --green: #4ade80;
-            --red: #f87171;
-            --yellow: #fbbf24;
-        }
-        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Agent - 智能体平台</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%236366f1'/><text x='50' y='62' font-size='40' text-anchor='middle' fill='white'>AI</text></svg>">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0f;--sidebar:#12121f;--card:#1a1a2e;--card-hover:#22223a;--border:#2a2a3e;--text:#e4e4ef;--text-dim:#7c7c95;--accent:#6366f1;--accent-light:#818cf8;--accent-dim:#4f46e5;--green:#22c55e;--red:#ef4444;--yellow:#eab308;--radius:10px;--radius-sm:6px;--radius-lg:16px;--shadow:0 4px 24px rgba(0,0,0,.3)}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:hidden}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}::-webkit-scrollbar-thumb:hover{background:var(--text-dim)}
 
-        /* Sidebar */
-        .sidebar { width: 260px; background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
-        .sidebar-header { padding: 20px; border-bottom: 1px solid var(--border); }
-        .sidebar-header h1 { font-size: 18px; color: var(--accent); }
-        .sidebar-header p { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+.sidebar{width:260px;background:var(--sidebar);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transition:width .3s}
+.sidebar.collapsed{width:0}
+.sidebar-header{padding:20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.sidebar-header .logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent-light));display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#fff;flex-shrink:0}
+.sidebar-header h1{font-size:15px;background:linear-gradient(135deg,var(--accent-light),#c7d2fe);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.sidebar-header p{font-size:11px;color:var(--text-dim);margin-top:2px}
+.sidebar-section{padding:14px 16px;border-bottom:1px solid var(--border)}
+.sidebar-section h3{font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
+.input-field{width:100%;padding:8px 12px;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;outline:none;transition:border-color .2s}
+.input-field:focus{border-color:var(--accent)}
+.select-field{width:100%;padding:8px 12px;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;cursor:pointer;outline:none}
+.select-field:focus{border-color:var(--accent)}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;font-size:13px;margin-top:10px}
+.toggle-switch{position:relative;width:38px;height:22px;background:var(--border);border-radius:11px;cursor:pointer;transition:background .3s}
+.toggle-switch.on{background:var(--accent)}
+.toggle-knob{position:absolute;top:3px;left:3px;width:16px;height:16px;background:#fff;border-radius:50%;transition:transform .3s}
+.toggle-switch.on .toggle-knob{transform:translateX(16px)}
+.agent-list{display:flex;flex-direction:column;gap:4px}
+.agent-item{padding:8px 12px;border-radius:var(--radius-sm);cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px;transition:background .2s}
+.agent-item:hover{background:var(--card-hover)}
+.agent-item.active{background:rgba(99,102,241,.15);border-left:3px solid var(--accent)}
+.agent-dot{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0}
+.storage-row{display:flex;justify-content:space-between;font-size:12px;padding:3px 0}
+.storage-row .label{color:var(--text-dim)}
+.storage-row .value{font-weight:600}
 
-        .sidebar-section { padding: 12px 16px; border-bottom: 1px solid var(--border); }
-        .sidebar-section h3 { font-size: 12px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 8px; }
-        .model-select { width: 100%; padding: 8px; background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font-size: 13px; }
-        .agent-list { display: flex; flex-direction: column; gap: 4px; }
-        .agent-item { padding: 8px 12px; background: var(--card); border-radius: 4px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 8px; }
-        .agent-item:hover { background: var(--accent-dim); }
-        .agent-item.active { background: var(--accent-dim); border-left: 3px solid var(--accent); }
-        .agent-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.chat-header{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px}
+.chat-header .title-area{display:flex;align-items:center;gap:10px}
+.chat-header h2{font-size:16px}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
+.header-actions{display:flex;gap:8px}
+.icon-btn{width:34px;height:34px;border-radius:var(--radius-sm);background:var(--card);border:1px solid var(--border);color:var(--text-dim);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;transition:all .2s}
+.icon-btn:hover{background:var(--card-hover);color:var(--text)}
 
-        .tool-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-top: 8px; }
-        .toggle-switch { position: relative; width: 36px; height: 20px; background: var(--border); border-radius: 10px; cursor: pointer; transition: 0.3s; }
-        .toggle-switch.on { background: var(--green); }
-        .toggle-knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; background: white; border-radius: 50%; transition: 0.3s; }
-        .toggle-switch.on .toggle-knob { left: 18px; }
+.chat-messages{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px}
+.msg{max-width:75%;padding:12px 16px;border-radius:var(--radius-lg);font-size:14px;line-height:1.7;word-break:break-word;animation:msgIn .3s ease}
+@keyframes msgIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.msg.user{align-self:flex-end;background:var(--accent-dim);color:#fff;border-bottom-right-radius:4px}
+.msg.assistant{align-self:flex-start;background:var(--card);border:1px solid var(--border);border-bottom-left-radius:4px}
+.msg .meta{font-size:11px;color:var(--text-dim);margin-bottom:4px;display:flex;gap:8px;align-items:center}
+.msg pre{background:#0d1117;border-radius:var(--radius-sm);padding:12px;margin:8px 0;overflow-x:auto;font-size:13px;border:1px solid var(--border)}
+.msg code{font-family:'Consolas','Courier New',monospace;font-size:13px}
+.msg p{margin:4px 0}
+.msg ul,.msg ol{margin:4px 0 4px 20px}
+.msg table{border-collapse:collapse;margin:8px 0;width:100%}
+.msg th,.msg td{border:1px solid var(--border);padding:6px 10px;font-size:13px}
+.msg th{background:var(--card-hover)}
+.typing{display:inline-flex;gap:4px;align-items:center}
+.typing span{width:7px;height:7px;border-radius:50%;background:var(--text-dim);animation:typing 1.4s infinite}
+.typing span:nth-child(2){animation-delay:.2s}
+.typing span:nth-child(3){animation-delay:.4s}
+@keyframes typing{0%,60%,100%{opacity:.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-4px)}}
 
-        /* Main chat area */
-        .main { flex: 1; display: flex; flex-direction: column; }
-        .chat-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
-        .chat-header h2 { font-size: 16px; }
-        .status-badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; background: var(--green); color: #000; }
+.chat-input{padding:16px 20px;border-top:1px solid var(--border);display:flex;gap:10px;align-items:flex-end}
+.chat-input textarea{flex:1;padding:12px 14px;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);font-size:14px;font-family:inherit;resize:none;height:44px;max-height:120px;outline:none;transition:border-color .2s}
+.chat-input textarea:focus{border-color:var(--accent)}
+.send-btn{padding:12px 20px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:14px;font-weight:600;transition:all .2s;white-space:nowrap}
+.send-btn:hover:not(:disabled){background:var(--accent-light);box-shadow:0 2px 12px rgba(99,102,241,.4)}
+.send-btn:disabled{opacity:.5;cursor:not-allowed}
 
-        .chat-messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
-        .msg { max-width: 80%; padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.6; }
-        .msg.user { align-self: flex-end; background: var(--accent-dim); }
-        .msg.assistant { align-self: flex-start; background: var(--card); border: 1px solid var(--border); }
-        .msg.tool-result { align-self: center; background: #1a3a1a; border: 1px solid var(--green); font-family: monospace; font-size: 12px; max-width: 90%; }
-        .msg .meta { font-size: 11px; color: var(--text-dim); margin-bottom: 4px; }
+.right-panel{width:280px;background:var(--sidebar);border-left:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transition:width .3s}
+.right-panel.collapsed{width:0}
+.right-panel-header{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.right-panel-header h3{font-size:14px}
+.tool-list{flex:1;overflow-y:auto;padding:8px}
+.tool-card{padding:12px;background:var(--card);border-radius:var(--radius-sm);margin-bottom:8px;border:1px solid var(--border);transition:border-color .2s}
+.tool-card:hover{border-color:var(--accent)}
+.tool-card .name{font-size:13px;color:var(--accent-light);font-weight:600;display:flex;align-items:center;gap:6px}
+.tool-card .desc{font-size:12px;color:var(--text-dim);margin-top:4px;line-height:1.5}
+.tool-test{margin-top:8px;display:flex;gap:4px}
+.tool-test input{flex:1;padding:6px 8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;outline:none}
+.tool-test input:focus{border-color:var(--accent)}
+.tool-test button{padding:6px 12px;background:var(--accent-dim);color:#fff;border:none;border-radius:var(--radius-sm);cursor:pointer;font-size:12px;font-weight:600;transition:background .2s}
+.tool-test button:hover{background:var(--accent)}
 
-        .chat-input { padding: 16px 20px; border-top: 1px solid var(--border); display: flex; gap: 12px; }
-        .chat-input textarea { flex: 1; padding: 12px; background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 8px; font-size: 14px; resize: none; height: 44px; max-height: 120px; }
-        .chat-input button { padding: 12px 24px; background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
-        .chat-input button:hover { background: var(--accent-dim); }
-        .chat-input button:disabled { background: var(--border); cursor: not-allowed; }
+.toast{position:fixed;top:20px;right:20px;padding:12px 20px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);z-index:1000;font-size:13px;display:flex;align-items:center;gap:8px;animation:toastIn .3s ease}
+@keyframes toastIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+.toast.error{border-color:var(--red);color:var(--red)}
+.toast.success{border-color:var(--green);color:var(--green)}
 
-        /* Right panel - tools */
-        .right-panel { width: 280px; background: var(--sidebar); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
-        .right-panel h3 { padding: 16px; font-size: 14px; border-bottom: 1px solid var(--border); }
-        .tool-list { flex: 1; overflow-y: auto; padding: 8px; }
-        .tool-card { padding: 12px; background: var(--card); border-radius: 6px; margin-bottom: 8px; }
-        .tool-card .name { font-size: 13px; color: var(--accent); font-weight: 600; }
-        .tool-card .desc { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
-        .tool-test { margin-top: 8px; display: flex; gap: 4px; }
-        .tool-test input { flex: 1; padding: 6px 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font-size: 12px; }
-        .tool-test button { padding: 6px 12px; background: var(--accent-dim); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
-    </style>
+.settings-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:2000;backdrop-filter:blur(4px)}
+.settings-modal.show{display:flex}
+.settings-modal .panel{background:var(--sidebar);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;width:440px;max-width:90vw}
+.settings-modal h2{font-size:18px;margin-bottom:16px;color:var(--accent-light)}
+.settings-field{margin-bottom:16px}
+.settings-field label{display:block;font-size:12px;color:var(--text-dim);margin-bottom:6px}
+.settings-field input{width:100%;padding:10px 12px;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px;outline:none}
+.settings-field input:focus{border-color:var(--accent)}
+.settings-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+.btn{padding:10px 20px;border-radius:var(--radius-sm);font-size:14px;cursor:pointer;border:none;font-weight:600;transition:all .2s}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:var(--accent-light)}
+.btn-secondary{background:var(--card);color:var(--text);border:1px solid var(--border)}.btn-secondary:hover{background:var(--card-hover)}
+
+@media(max-width:900px){.right-panel{display:none}.sidebar{width:200px}}
+@media(max-width:600px){.sidebar{display:none}}
+</style>
 </head>
 <body>
-    <div class="sidebar">
-        <div class="sidebar-header">
-            <h1>AI Agent</h1>
-            <p>多功能智能体系统</p>
-        </div>
-        <div class="sidebar-section">
-            <h3>模型选择</h3>
-            <select class="model-select" id="modelSelect">
-                <option value="deepseek-v4-flash">DeepSeek V4 Flash (低成本)</option>
-                <option value="deepseek-v4-pro">DeepSeek V4 Pro (高性能)</option>
-                <option value="deepseek-v4-flash-vision-exp">DeepSeek V4 Vision</option>
-            </select>
-            <div class="tool-toggle">
-                <div class="toggle-switch" id="toolsToggle">
-                    <div class="toggle-knob"></div>
-                </div>
-                <span>启用工具调用</span>
-            </div>
-        </div>
-        <div class="sidebar-section">
-            <h3>API Key (鉴权)</h3>
-            <input class="model-select" id="apiKeyInput" type="password" placeholder="输入 X-API-Key">
-        </div>
-        <div class="sidebar-section">
-            <h3>Agent 列表</h3>
-            <div class="agent-list" id="agentList">
-                <div class="agent-item active" data-agent="coordinator"><div class="agent-dot"></div>Coordinator</div>
-                <div class="agent-item" data-agent="code"><div class="agent-dot"></div>Code Agent</div>
-                <div class="agent-item" data-agent="research"><div class="agent-dot"></div>Research Agent</div>
-                <div class="agent-item" data-agent="data"><div class="agent-dot"></div>Data Agent</div>
-                <div class="agent-item" data-agent="react"><div class="agent-dot"></div>ReAct Agent</div>
-            </div>
-        </div>
-        <div class="sidebar-section">
-            <h3>对话</h3>
-            <div class="agent-list">
-                <div class="agent-item" id="newChatBtn"><div class="agent-dot" style="background:var(--accent)"></div>新对话</div>
-                <div class="agent-item" id="clearChatBtn"><div class="agent-dot" style="background:var(--red)"></div>清空记录</div>
-            </div>
-        </div>
-        <div class="sidebar-section" style="margin-top:auto">
-            <h3>存储后端</h3>
-            <div style="display:flex;flex-direction:column;gap:6px;font-size:12px">
-                <div style="display:flex;justify-content:space-between;align-items:center">
-                    <span style="color:var(--text-dim)">记忆</span>
-                    <span id="memoryBackend" style="color:var(--yellow)">检测中...</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center">
-                    <span style="color:var(--text-dim)">向量库</span>
-                    <span id="vectorBackend" style="color:var(--yellow)">检测中...</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center">
-                    <span style="color:var(--text-dim)">对话数</span>
-                    <span id="convCount" style="color:var(--text)">0</span>
-                </div>
-            </div>
-        </div>
+<div class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="logo">AI</div>
+    <div><h1>AI Agent</h1><p>智能体平台</p></div>
+  </div>
+  <div class="sidebar-section">
+    <h3>服务器地址</h3>
+    <input class="input-field" id="serverUrl" value="http://localhost:8080" placeholder="http://host:port">
+  </div>
+  <div class="sidebar-section">
+    <h3>API Key 鉴权</h3>
+    <input class="input-field" id="apiKeyInput" type="password" placeholder="输入 X-API-Key">
+  </div>
+  <div class="sidebar-section">
+    <h3>模型选择</h3>
+    <select class="select-field" id="modelSelect">
+      <option value="deepseek-v4-flash">DeepSeek V4 Flash (低成本)</option>
+      <option value="deepseek-v4-pro">DeepSeek V4 Pro (高性能)</option>
+      <option value="deepseek-v4-flash-vision-exp">DeepSeek V4 Vision</option>
+    </select>
+    <div class="toggle-row">
+      <span>启用工具调用</span>
+      <div class="toggle-switch" id="toolsToggle"><div class="toggle-knob"></div></div>
     </div>
-
-    <div class="main">
-        <div class="chat-header">
-            <h2 id="chatTitle">AI Agent</h2>
-            <span class="status-badge" id="statusBadge">在线</span>
-        </div>
-        <div class="chat-messages" id="messages">
-            <div class="msg assistant">
-                <div class="meta">AI Agent</div>
-                你好！我是多功能 AI Agent，可以聊天、搜索、查天气、读写文件等。选择左边的模型和工具来开始吧。
-            </div>
-        </div>
-        <div class="chat-input">
-            <textarea id="input" placeholder="输入消息... (Enter 发送, Shift+Enter 换行)" rows="1"></textarea>
-            <button id="sendBtn" onclick="sendMessage()">发送</button>
-        </div>
+    <div class="toggle-row">
+      <span>流式输出</span>
+      <div class="toggle-switch" id="streamToggle"><div class="toggle-knob"></div></div>
     </div>
-
-    <div class="right-panel">
-        <h3>工具面板</h3>
-        <div class="tool-list" id="toolList"></div>
+  </div>
+  <div class="sidebar-section">
+    <h3>Agent 列表</h3>
+    <div class="agent-list" id="agentList">
+      <div class="agent-item active" data-agent="coordinator"><div class="agent-dot"></div>Coordinator (路由)</div>
+      <div class="agent-item" data-agent="code"><div class="agent-dot"></div>Code Agent</div>
+      <div class="agent-item" data-agent="research"><div class="agent-dot"></div>Research Agent</div>
+      <div class="agent-item" data-agent="data"><div class="agent-dot"></div>Data Agent</div>
+      <div class="agent-item" data-agent="react"><div class="agent-dot"></div>ReAct Agent</div>
     </div>
+  </div>
+  <div class="sidebar-section">
+    <h3>对话管理</h3>
+    <div class="agent-list">
+      <div class="agent-item" id="newChatBtn" style="cursor:pointer"><div class="agent-dot" style="background:var(--accent)"></div>新对话</div>
+      <div class="agent-item" id="clearChatBtn" style="cursor:pointer"><div class="agent-dot" style="background:var(--red)"></div>清空记录</div>
+    </div>
+  </div>
+  <div class="sidebar-section" style="margin-top:auto">
+    <h3>存储状态</h3>
+    <div class="storage-row"><span class="label">记忆后端</span><span class="value" id="memoryBackend">--</span></div>
+    <div class="storage-row"><span class="label">向量库</span><span class="value" id="vectorBackend">--</span></div>
+    <div class="storage-row"><span class="label">对话数</span><span class="value" id="convCount">0</span></div>
+  </div>
+</div>
 
-    <script>
-        let conversationId = 'session-' + Date.now();
-        let selectedAgent = 'coordinator';
-        let useTools = false;
-        let selectedModel = 'deepseek-v4-flash';
+<div class="main">
+  <div class="chat-header">
+    <div class="title-area">
+      <div class="status-dot" id="statusDot"></div>
+      <h2 id="chatTitle">Coordinator Agent</h2>
+    </div>
+    <div class="header-actions">
+      <button class="icon-btn" onclick="toggleSidebar()" title="侧边栏">&#9776;</button>
+      <button class="icon-btn" onclick="toggleRightPanel()" title="工具面板">&#9881;</button>
+    </div>
+  </div>
+  <div class="chat-messages" id="messages">
+    <div class="msg assistant">
+      <div class="meta">AI Agent</div>
+      你好！我是多功能 AI Agent，支持聊天、搜索、查天气、读写文件、HTTP 请求等。<br><br>
+      左侧选择模型和 Agent，右侧可直接测试工具。输入消息开始对话吧。
+    </div>
+  </div>
+  <div class="chat-input">
+    <textarea id="input" placeholder="输入消息... (Enter 发送, Shift+Enter 换行)" rows="1"></textarea>
+    <button class="send-btn" id="sendBtn" onclick="sendMessage()">发送</button>
+  </div>
+</div>
 
-        // API Key 管理：受保护接口需携带 X-API-Key 请求头
-        const apiKeyInput = document.getElementById('apiKeyInput');
-        apiKeyInput.value = localStorage.getItem('agentApiKey') || '';
-        apiKeyInput.addEventListener('change', () => {
-            localStorage.setItem('agentApiKey', apiKeyInput.value.trim());
-        });
+<div class="right-panel" id="rightPanel">
+  <div class="right-panel-header">
+    <h3>工具面板</h3>
+    <span style="font-size:12px;color:var(--text-dim)" id="toolCount">0 个</span>
+  </div>
+  <div class="tool-list" id="toolList"></div>
+</div>
 
-        async function apiFetch(url, options = {}) {
-            options.headers = Object.assign({}, options.headers, { 'X-API-Key': apiKeyInput.value.trim() });
-            const res = await fetch(url, options);
-            if (res.status === 401) {
-                throw new Error('鉴权失败 (401)：请在左侧填入正确的 API Key');
-            }
-            return res;
-        }
+<div class="settings-modal" id="settingsModal">
+  <div class="panel">
+    <h2>服务器设置</h2>
+    <div class="settings-field">
+      <label>服务器地址</label>
+      <input id="settingsUrl" placeholder="http://localhost:8080">
+    </div>
+    <div class="settings-field">
+      <label>API Key</label>
+      <input id="settingsKey" type="password" placeholder="X-API-Key">
+    </div>
+    <div class="settings-actions">
+      <button class="btn btn-secondary" onclick="closeSettings()">取消</button>
+      <button class="btn btn-primary" onclick="saveSettings()">保存</button>
+    </div>
+  </div>
+</div>
 
-        // Model selector
-        document.getElementById('modelSelect').addEventListener('change', e => {
-            selectedModel = e.target.value;
-        });
+<script>
+let conversationId='session-'+Date.now();
+let selectedAgent='coordinator';
+let useTools=false;
+let useStream=false;
+let selectedModel='deepseek-v4-flash';
 
-        // Tools toggle
-        document.getElementById('toolsToggle').addEventListener('click', e => {
-            useTools = !useTools;
-            e.currentTarget.classList.toggle('on', useTools);
-        });
+const serverUrlInput=document.getElementById('serverUrl');
+const apiKeyInput=document.getElementById('apiKeyInput');
+serverUrlInput.value=localStorage.getItem('serverUrl')||'http://localhost:8080';
+apiKeyInput.value=localStorage.getItem('agentApiKey')||'';
+serverUrlInput.addEventListener('change',()=>{localStorage.setItem('serverUrl',serverUrlInput.value.trim());showToast('服务器地址已更新','success');loadTools();loadStorageStatus();});
+apiKeyInput.addEventListener('change',()=>{localStorage.setItem('agentApiKey',apiKeyInput.value.trim());});
 
-        // Agent selection
-        document.querySelectorAll('.agent-item[data-agent]').forEach(el => {
-            el.addEventListener('click', () => {
-                document.querySelectorAll('.agent-item[data-agent]').forEach(a => a.classList.remove('active'));
-                el.classList.add('active');
-                selectedAgent = el.dataset.agent;
-                document.getElementById('chatTitle').textContent = selectedAgent + ' Agent';
-            });
-        });
+function getBaseUrl(){return (localStorage.getItem('serverUrl')||'http://localhost:8080').replace(/\/$/,'');}
+function getApiKey(){return apiKeyInput.value.trim();}
 
-        // New chat
-        document.getElementById('newChatBtn').addEventListener('click', () => {
-            conversationId = 'session-' + Date.now();
-            document.getElementById('messages').innerHTML = '';
-            addMessage('assistant', '新对话已开始。');
-        });
+async function apiFetch(path,options={}){
+  const url=getBaseUrl()+path;
+  options.headers=Object.assign({'X-API-Key':getApiKey(),'Content-Type':'application/json'},options.headers||{});
+  const res=await fetch(url,options);
+  if(res.status===401){showToast('鉴权失败：请检查 API Key','error');throw new Error('401 Unauthorized');}
+  if(res.status===429){showToast('请求过于频繁，请稍后重试','error');throw new Error('429 Rate Limited');}
+  if(!res.ok){const t=await res.text();showToast('请求失败: '+res.status,'error');throw new Error(res.status+': '+t);}
+  return res;
+}
 
-        // Clear chat
-        document.getElementById('clearChatBtn').addEventListener('click', async () => {
-            await apiFetch('/api/chat/history/' + conversationId, { method: 'DELETE' });
-            document.getElementById('messages').innerHTML = '';
-            addMessage('assistant', '对话记录已清空。');
-        });
+function showToast(msg,type=''){
+  const t=document.createElement('div');
+  t.className='toast '+type;
+  t.textContent=msg;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(),3000);
+}
 
-        // Input handling
-        const input = document.getElementById('input');
-        input.addEventListener('keydown', e => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
-            }
-        });
-        input.addEventListener('input', () => {
-            input.style.height = 'auto';
-            input.style.height = Math.min(input.scrollHeight, 120) + 'px';
-        });
+function renderMarkdown(text){
+  if(!text)return '';
+  let html=text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/```(\w*)\n?([\s\S]*?)```/g,(m,lang,code)=>'<pre><code>'+code.trim()+'</code></pre>')
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/^\s*[-*]\s+(.+)$/gm,'<li>$1</li>')
+    .replace(/(<li>[\s\S]*?<\/li>)/g,'<ul>$1</ul>')
+    .replace(/^\d+\.\s+(.+)$/gm,'<li>$1</li>')
+    .replace(/\n/g,'<br>');
+  return html;
+}
 
-        // Send message
-        async function sendMessage() {
-            const text = input.value.trim();
-            if (!text) return;
+function addMessage(role,content,meta){
+  const div=document.createElement('div');
+  div.className='msg '+role;
+  let html='';
+  if(meta)html+='<div class="meta">'+meta+'</div>';
+  if(role==='assistant')html+=renderMarkdown(content||'空回复');
+  else html+=(content||'空回复').replace(/\n/g,'<br>');
+  div.innerHTML=html;
+  document.getElementById('messages').appendChild(div);
+  div.scrollIntoView({behavior:'smooth'});
+  return div;
+}
 
-            addMessage('user', text);
-            input.value = '';
-            input.style.height = 'auto';
+function addTypingIndicator(){
+  const div=document.createElement('div');
+  div.className='msg assistant';
+  div.id='typingMsg';
+  div.innerHTML='<div class="typing"><span></span><span></span><span></span></div>';
+  document.getElementById('messages').appendChild(div);
+  div.scrollIntoView({behavior:'smooth'});
+  return div;
+}
 
-            const sendBtn = document.getElementById('sendBtn');
-            sendBtn.disabled = true;
-            sendBtn.textContent = '思考中...';
+document.getElementById('modelSelect').addEventListener('change',e=>selectedModel=e.target.value);
+document.getElementById('toolsToggle').addEventListener('click',e=>{useTools=!useTools;e.currentTarget.classList.toggle('on',useTools);});
+document.getElementById('streamToggle').addEventListener('click',e=>{useStream=!useStream;e.currentTarget.classList.toggle('on',useStream);});
 
-            try {
-                const endpoint = useTools ? '/api/chat/simple' : '/api/chat/agent/' + selectedAgent;
-                const body = useTools
-                    ? { message: text, conversationId, model: selectedModel, useTools: 'true' }
-                    : { message: text, conversationId, model: selectedModel };
+document.querySelectorAll('.agent-item[data-agent]').forEach(el=>{
+  el.addEventListener('click',()=>{
+    document.querySelectorAll('.agent-item[data-agent]').forEach(a=>a.classList.remove('active'));
+    el.classList.add('active');
+    selectedAgent=el.dataset.agent;
+    document.getElementById('chatTitle').textContent=el.textContent.trim();
+  });
+});
 
-                const res = await apiFetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
-                const data = await res.json();
-                addMessage('assistant', data.response || 'AI 返回空回复', data.model || selectedModel);
-            } catch (err) {
-                addMessage('assistant', '请求失败: ' + err.message);
-            } finally {
-                sendBtn.disabled = false;
-                sendBtn.textContent = '发送';
-            }
-        }
+document.getElementById('newChatBtn').addEventListener('click',()=>{
+  conversationId='session-'+Date.now();
+  document.getElementById('messages').innerHTML='';
+  addMessage('assistant','新对话已开始。选择左侧 Agent 和模型开始吧。');
+});
 
-        function addMessage(role, content, meta) {
-            const div = document.createElement('div');
-            div.className = 'msg ' + role;
-            let html = '';
-            if (meta) html += '<div class="meta">' + meta + '</div>';
-            html += (content || '空回复').replace(/\n/g, '<br>');
-            div.innerHTML = html;
-            document.getElementById('messages').appendChild(div);
-            div.scrollIntoView({ behavior: 'smooth' });
-        }
+document.getElementById('clearChatBtn').addEventListener('click',async()=>{
+  try{await apiFetch('/api/chat/history/'+conversationId,{method:'DELETE'});document.getElementById('messages').innerHTML='';addMessage('assistant','对话记录已清空。');showToast('记录已清空','success');}
+  catch(e){}
+});
 
-        // Load tools
-        async function loadTools() {
-            const res = await apiFetch('/api/chat/tools');
-            const tools = await res.json();
-            const list = document.getElementById('toolList');
-            list.innerHTML = '';
-            tools.forEach(t => {
-                const card = document.createElement('div');
-                card.className = 'tool-card';
-                card.innerHTML = `
-                    <div class="name">${t.name}</div>
-                    <div class="desc">${t.description}</div>
-                    <div class="tool-test">
-                        <input placeholder="输入参数..." data-tool="${t.name}">
-                        <button onclick="testTool('${t.name}', this)">执行</button>
-                    </div>
-                `;
-                list.appendChild(card);
-            });
-        }
+const input=document.getElementById('input');
+input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}});
+input.addEventListener('input',()=>{input.style.height='auto';input.style.height=Math.min(input.scrollHeight,120)+'px';});
 
-        async function testTool(name, btn) {
-            const input = btn.previousElementSibling;
-            const val = input.value.trim();
-            if (!val) { alert('请输入参数'); return; }
+async function sendMessage(){
+  const text=input.value.trim();
+  if(!text)return;
+  addMessage('user',text);
+  input.value='';input.style.height='auto';
+  const sendBtn=document.getElementById('sendBtn');
+  sendBtn.disabled=true;sendBtn.textContent='思考中...';
 
-            btn.textContent = '...';
-            btn.disabled = true;
-            try {
-                const res = await apiFetch('/api/tools/' + name, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ input: val })
-                });
-                const data = await res.json();
-                addMessage('tool-result', '🔧 ' + name + '("' + val + '"):\n' + data.result);
-            } catch (err) {
-                addMessage('tool-result', '执行失败: ' + err.message);
-            } finally {
-                btn.textContent = '执行';
-                btn.disabled = false;
-            }
-        }
+  try{
+    if(useStream){
+      const typingEl=addTypingIndicator();
+      let fullText='';
+      const endpoint=useTools?'/api/chat/stream':'/api/chat/stream';
+      const params=new URLSearchParams({message:text,conversationId,model:selectedModel});
+      const url=getBaseUrl()+'/api/chat/stream?'+params.toString();
+      const res=await fetch(url,{headers:{'X-API-Key':getApiKey()}});
+      if(!res.ok){throw new Error('HTTP '+res.status);}
+      const reader=res.body.getReader();
+      const decoder=new TextDecoder();
+      typingEl.innerHTML='';
+      while(true){
+        const{done,value}=await reader.read();
+        if(done)break;
+        const chunk=decoder.decode(value,{stream:true});
+        fullText+=chunk;
+        typingEl.innerHTML=renderMarkdown(fullText);
+        typingEl.scrollIntoView({behavior:'smooth'});
+      }
+      if(!fullText){typingEl.innerHTML='AI 返回空回复';}
+    }else{
+      const endpoint=useTools?'/api/chat/simple':'/api/chat/agent/'+selectedAgent;
+      const body=useTools
+        ?{message:text,conversationId,model:selectedModel,useTools:'true'}
+        :{message:text,conversationId,model:selectedModel};
+      const res=await apiFetch(endpoint,{method:'POST',body:JSON.stringify(body)});
+      const data=await res.json();
+      addMessage('assistant',data.response||'AI 返回空回复',(data.model||selectedModel)+' · '+(data.agent||selectedAgent));
+    }
+  }catch(err){
+    addMessage('assistant','请求失败: '+err.message);
+  }finally{
+    sendBtn.disabled=false;sendBtn.textContent='发送';
+  }
+}
 
-        loadTools();
-        loadStorageStatus();
+function memoryService_addAssistant(text){}
 
-        async function loadStorageStatus() {
-            try {
-                const res = await apiFetch('/api/chat/storage-status');
-                const data = await res.json();
-                const memEl = document.getElementById('memoryBackend');
-                const vecEl = document.getElementById('vectorBackend');
-                const countEl = document.getElementById('convCount');
+async function loadTools(){
+  try{
+    const res=await apiFetch('/api/chat/tools');
+    const tools=await res.json();
+    const list=document.getElementById('toolList');
+    document.getElementById('toolCount').textContent=tools.length+' 个';
+    list.innerHTML='';
+    tools.forEach(t=>{
+      const card=document.createElement('div');
+      card.className='tool-card';
+      card.innerHTML='<div class="name">'+t.name+'</div><div class="desc">'+t.description+'</div><div class="tool-test"><input placeholder="输入参数..." data-tool="'+t.name+'"><button onclick="testTool(\''+t.name+'\',this)">执行</button></div>';
+      list.appendChild(card);
+    });
+  }catch(e){document.getElementById('toolList').innerHTML='<div style="color:var(--text-dim);font-size:12px;padding:8px">加载失败: '+e.message+'</div>';}
+}
 
-                const memType = data.memoryBackend;
-                memEl.textContent = memType === 'redis' ? 'Redis' : 'InMemory';
-                memEl.style.color = memType === 'redis' ? 'var(--green)' : 'var(--yellow)';
+async function testTool(name,btn){
+  const inp=btn.previousElementSibling;
+  const val=inp.value.trim();
+  if(!val){showToast('请输入参数','error');return;}
+  btn.textContent='...';btn.disabled=true;
+  try{
+    const res=await apiFetch('/api/tools/'+name,{method:'POST',body:JSON.stringify({input:val})});
+    const data=await res.json();
+    addMessage('assistant','<strong>工具 '+name+'("'+val+'")</strong><br><pre><code>'+(data.result||'')+'</code></pre>','Tool Result');
+  }catch(err){showToast('执行失败: '+err.message,'error');}
+  finally{btn.textContent='执行';btn.disabled=false;}
+}
 
-                const vecType = data.vectorStoreBackend;
-                vecEl.textContent = vecType === 'qdrant' ? 'Qdrant' : 'InMemory';
-                vecEl.style.color = vecType === 'qdrant' ? 'var(--green)' : 'var(--yellow)';
+async function loadStorageStatus(){
+  try{
+    const res=await apiFetch('/api/chat/storage-status');
+    const data=await res.json();
+    const memType=data.memoryBackend||'memory';
+    const memEl=document.getElementById('memoryBackend');
+    memEl.textContent=memType==='redis'?'Redis':'InMemory';
+    memEl.style.color=memType==='redis'?'var(--green)':'var(--yellow)';
+    const vecType=data.vectorStoreBackend||'memory';
+    const vecEl=document.getElementById('vectorBackend');
+    vecEl.textContent=vecType==='qdrant'?'Qdrant':(vecType==='embedding'?'Embedding':'InMemory');
+    vecEl.style.color=vecType==='qdrant'?'var(--green)':'var(--yellow)';
+    document.getElementById('convCount').textContent=data.conversations||0;
+    document.getElementById('statusDot').style.background='var(--green)';
+  }catch(e){
+    document.getElementById('statusDot').style.background='var(--red)';
+    document.getElementById('memoryBackend').textContent='离线';
+    document.getElementById('memoryBackend').style.color='var(--red)';
+  }
+}
 
-                countEl.textContent = data.conversations || 0;
-            } catch (err) {
-                console.error('Storage status fetch failed:', err);
-            }
-        }
-    </script>
+function toggleSidebar(){document.getElementById('sidebar').classList.toggle('collapsed');}
+function toggleRightPanel(){document.getElementById('rightPanel').classList.toggle('collapsed');}
+function openSettings(){document.getElementById('settingsModal').classList.add('show');document.getElementById('settingsUrl').value=getBaseUrl();document.getElementById('settingsKey').value=getApiKey();}
+function closeSettings(){document.getElementById('settingsModal').classList.remove('show');}
+function saveSettings(){const url=document.getElementById('settingsUrl').value.trim();const key=document.getElementById('settingsKey').value.trim();localStorage.setItem('serverUrl',url);serverUrlInput.value=url;apiKeyInput.value=key;localStorage.setItem('agentApiKey',key);closeSettings();showToast('设置已保存','success');loadTools();loadStorageStatus();}
+
+loadTools();loadStorageStatus();setInterval(loadStorageStatus,30000);
+</script>
 </body>
 </html>

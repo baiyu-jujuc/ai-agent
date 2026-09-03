@@ -2,13 +2,8 @@ package com.baiyu.agent.agent;
 
 import com.baiyu.agent.tool.ToolComponent;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.SystemMessage;
-import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
 import java.util.List;
 
 @Component("react")
@@ -29,20 +24,4 @@ public class ReActAgent extends AbstractAgent {
 
     @Override
     public String getDescription() { return "ReAct agent with reasoning-action loop (native function calling)"; }
-
-    @Override
-    public String execute(String input, List<Message> context) {
-        List<Message> messages = new ArrayList<>();
-        messages.add(new SystemMessage(systemPrompt));
-        if (context != null && !context.isEmpty()) {
-            messages.addAll(context);
-        }
-        messages.add(new UserMessage(input));
-
-        var spec = chatClient.prompt(new Prompt(messages));
-        if (!tools.isEmpty()) {
-            spec.tools(tools.toArray());
-        }
-        return spec.call().content();
-    }
 }

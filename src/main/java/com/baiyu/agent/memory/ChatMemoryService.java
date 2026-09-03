@@ -1,6 +1,5 @@
 package com.baiyu.agent.memory;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,12 +19,20 @@ import java.util.concurrent.TimeUnit;
 public class ChatMemoryService {
 
     private static final Logger log = LoggerFactory.getLogger(ChatMemoryService.class);
-    private static final int MAX_HISTORY = 20;
     private static final String REDIS_KEY_PREFIX = "chat:memory:";
     private static final long REDIS_TTL_HOURS = 24;
 
     @Value("${agent.storage.memory:memory}")
     private String memoryType;
+
+    @Value("${agent.memory.max-tokens:8000}")
+    private int maxTokens;
+
+    @Value("${agent.memory.max-messages:40}")
+    private int maxMessages;
+
+    @Value("${agent.memory.max-conversations:100}")
+    private int maxConversations;
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -57,7 +64,7 @@ public class ChatMemoryService {
             try {
                 redisTemplate.delete(REDIS_KEY_PREFIX + conversationId);
             } catch (Exception e) {
-                log.warn("Redis clear failed, falling back to in-memory: {}", e.getMessage());
+                log.warn("Redis clear failed: {}", e.getMessage());
             }
             return;
         }
@@ -75,7 +82,7 @@ public class ChatMemoryService {
                 }
                 return ids;
             } catch (Exception e) {
-                log.warn("Redis keys scan failed, falling back to in-memory: {}", e.getMessage());
+                log.warn("Redis keys scan failed: {}", e.getMessage());
                 return conversations.keySet();
             }
         }
@@ -90,16 +97,41 @@ public class ChatMemoryService {
         return "redis".equals(memoryType) && redisTemplate != null;
     }
 
-    private void addToHistory(String conversationId, Message message) {
+    private synchronized void addToHistory(String conversationId, Message message) {
         if (useRedis()) {
             addToRedisHistory(conversationId, message);
             return;
         }
+        if (conversations.size() >= maxConversations && !conversations.containsKey(conversationId)) {
+            String oldest = conversations.keySet().iterator().next();
+            conversations.remove(oldest);
+            log.info("Evicted oldest conversation: {} (limit: {})", oldest, maxConversations);
+        }
         conversations.computeIfAbsent(conversationId, k -> new LinkedList<>()).add(message);
+        trimHistory(conversationId);
+    }
+
+    private void trimHistory(String conversationId) {
         LinkedList<Message> history = conversations.get(conversationId);
-        while (history.size() > MAX_HISTORY * 2) {
+        if (history == null) return;
+
+        while (history.size() > maxMessages) {
             history.pollFirst();
         }
+
+        int totalTokens = estimateTokens(history);
+        while (totalTokens > maxTokens && history.size() > 2) {
+            history.pollFirst();
+            totalTokens = estimateTokens(history);
+        }
+    }
+
+    private int estimateTokens(List<Message> messages) {
+        int totalChars = 0;
+        for (Message msg : messages) {
+            totalChars += msg.getText().length();
+        }
+        return (int) (totalChars / 3.5);
     }
 
     private void addToRedisHistory(String conversationId, Message message) {
@@ -113,16 +145,13 @@ public class ChatMemoryService {
             redisTemplate.expire(key, REDIS_TTL_HOURS, TimeUnit.HOURS);
 
             Long size = redisTemplate.opsForList().size(key);
-            if (size != null && size > MAX_HISTORY * 2) {
-                redisTemplate.opsForList().trim(key, size - MAX_HISTORY * 2, -1);
+            if (size != null && size > maxMessages) {
+                redisTemplate.opsForList().trim(key, size - maxMessages, -1);
             }
         } catch (Exception e) {
             log.warn("Redis write failed, falling back to in-memory: {}", e.getMessage());
             conversations.computeIfAbsent(conversationId, k -> new LinkedList<>()).add(message);
-            LinkedList<Message> history = conversations.get(conversationId);
-            while (history.size() > MAX_HISTORY * 2) {
-                history.pollFirst();
-            }
+            trimHistory(conversationId);
         }
     }
 
@@ -143,7 +172,7 @@ public class ChatMemoryService {
             }
             return messages;
         } catch (Exception e) {
-            log.warn("Redis read failed, falling back to in-memory: {}", e.getMessage());
+            log.warn("Redis read failed: {}", e.getMessage());
             LinkedList<Message> history = conversations.get(conversationId);
             if (history == null) return Collections.emptyList();
             return new ArrayList<>(history);

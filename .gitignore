@@ -42,3 +42,17 @@ logs/
 
 # Maven logs
 *.lastUpdated
+
+# Runtime & scratch
+workspace/
+onnx-cache/
+*.bak
+.remote-snapshot/
+
+# 本地非项目文件（仓库为公开，防止误提交）
+codex-zh-CN/
+codex-zh-CN-*.zip
+decision.json
+deploy-guide.html
+draft_*_folder/
+南京*.html
