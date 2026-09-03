@@ -49,10 +49,6 @@ onnx-cache/
 *.bak
 .remote-snapshot/
 
-# 本地非项目文件（仓库为公开，防止误提交）
-codex-zh-CN/
-codex-zh-CN-*.zip
-decision.json
+# 本地参考文档（非源码）
 deploy-guide.html
-draft_*_folder/
-南京*.html
+*.bak
