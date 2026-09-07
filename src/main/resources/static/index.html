@@ -276,7 +276,7 @@ let selectedModel='deepseek-v4-flash';
 let selectedSpace='';
 
 function getBaseUrl(){return(localStorage.getItem('serverUrl')||'http://localhost:8080').replace(/\/$/,'');}
-function getApiKey(){return(document.getElementById('settingsKey').value||localStorage.getItem('agentApiKey')||'').trim();}
+function getApiKey(){return(localStorage.getItem('agentApiKey')||'dev-key-change-in-production').trim();}
 function getModelKey(){return(localStorage.getItem('modelApiKey')||'').trim();}
 
 async function apiFetch(path,options={}){
