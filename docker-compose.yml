@@ -4,12 +4,16 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-sk-placeholder}
       - AGENT_API_KEY=${AGENT_API_KEY:-dev-key-change-in-production}
-      - VECTOR_STORE_TYPE=${VECTOR_STORE_TYPE:-qdrant}
+      - VECTOR_STORE_TYPE=${VECTOR_STORE_TYPE:-memory}
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
-      - MEMORY_TYPE=${MEMORY_TYPE:-redis}
+      - QDRANT_INIT_SCHEMA=${QDRANT_INIT_SCHEMA:-false}
+      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY:-}
+      - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL:-https://api.openai.com}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
+      - MEMORY_TYPE=${MEMORY_TYPE:-memory}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - H2_CONSOLE=false

@@ -1,12 +1,21 @@
 package com.baiyu.agent.config;
 
+import com.baiyu.agent.user.JwtAuthFilter;
+import com.baiyu.agent.user.JwtUtil;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.util.AntPathMatcher;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -23,13 +32,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * API Key 鉴权 + 限流 + CORS。
- *
- * 鉴权覆盖 protected-paths（默认 /api/**），public-paths 中的只读接口仅在 GET 时放行。
- * 密钥只接受请求头 X-API-Key 传递，避免落入 URL 与访问日志，并用常量时间比较防止时序侧信道。
- */
 @Configuration
+@EnableWebSecurity
 public class SecurityConfig implements WebMvcConfigurer {
 
     private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
@@ -40,7 +44,7 @@ public class SecurityConfig implements WebMvcConfigurer {
     @Value("${agent.security.protected-paths:/api/**}")
     private String protectedPaths;
 
-    @Value("${agent.security.public-paths:/api/chat/models,/api/chat/tools,/api/chat/storage-status,/api/agent/**}")
+    @Value("${agent.security.public-paths:/api/chat/models,/api/chat/tools,/api/chat/storage-status,/api/agent/**,/api/auth/**}")
     private String publicPaths;
 
     @Value("${agent.security.rate-limit-per-minute:30}")
@@ -51,6 +55,11 @@ public class SecurityConfig implements WebMvcConfigurer {
 
     private RateLimitInterceptor rateLimitInterceptor;
 
+    @Bean
+    public BCryptPasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
     @PostConstruct
     public void init() {
         this.rateLimitInterceptor = new RateLimitInterceptor(rateLimitPerMinute);
@@ -58,10 +67,21 @@ public class SecurityConfig implements WebMvcConfigurer {
                 protectedPaths, publicPaths, rateLimitPerMinute);
     }
 
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http, JwtUtil jwtUtil) throws Exception {
+        http
+                .csrf(csrf -> csrf.disable())
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/auth/**", "/actuator/**").permitAll()
+                        .anyRequest().permitAll()
+                )
+                .addFilterBefore(new JwtAuthFilter(jwtUtil), UsernamePasswordAuthenticationFilter.class);
+        return http.build();
+    }
+
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        // 不使用 excludePathPatterns：那样会连 POST 一起放行，
-        // 改由拦截器内部按 "仅 GET" 判定公开接口。
         registry.addInterceptor(new ApiKeyInterceptor(apiKey, splitCsv(publicPaths)))
                 .addPathPatterns(splitCsv(protectedPaths).toArray(String[]::new));
 
@@ -115,6 +135,11 @@ public class SecurityConfig implements WebMvcConfigurer {
             boolean isPublic = "GET".equalsIgnoreCase(request.getMethod())
                     && publicPatterns.stream().anyMatch(p -> PATH_MATCHER.match(p, uri));
             if (isPublic) {
+                return true;
+            }
+
+            // /api/auth/** is public for POST (register/login)
+            if (uri.startsWith("/api/auth/")) {
                 return true;
             }
 

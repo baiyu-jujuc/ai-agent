@@ -9,14 +9,11 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-// B5: Tests must NOT make real network calls. Use localhost:1 for instant connection refusal.
+// B5: Tests must NOT make real LLM calls. Protected POST is verified with the calculator tool.
 @SpringBootTest(properties = {
         "spring.ai.openai.api-key=test-key-not-real",
         "spring.ai.openai.base-url=http://localhost:1",
         "spring.ai.openai.chat.model=deepseek-v4-flash",
-        "spring.ai.retry.max-attempts=1",
-        "spring.ai.retry.backoff.initial-interval=0",
-        "spring.ai.retry.backoff.multiplier=1",
         "agent.storage.vector-store=memory",
         "agent.storage.memory=memory",
         "agent.security.api-key=test-secret-key",
@@ -40,27 +37,27 @@ class SecurityConfigTest {
 
     @Test
     void publicPostWithoutKeyBlocked() throws Exception {
-        mockMvc.perform(post("/api/chat/simple")
+        mockMvc.perform(post("/api/tools/calculator")
                         .contentType("application/json")
-                        .content("{\"message\":\"test\"}"))
+                        .content("{\"input\":\"2+3\"}"))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
     void protectedPostWithCorrectKey() throws Exception {
-        mockMvc.perform(post("/api/chat/simple")
+        mockMvc.perform(post("/api/tools/calculator")
                         .contentType("application/json")
                         .header("X-API-Key", "test-secret-key")
-                        .content("{\"message\":\"test\"}"))
+                        .content("{\"input\":\"2+3\"}"))
                 .andExpect(status().isOk());
     }
 
     @Test
     void protectedPostWithWrongKey() throws Exception {
-        mockMvc.perform(post("/api/chat/simple")
+        mockMvc.perform(post("/api/tools/calculator")
                         .contentType("application/json")
                         .header("X-API-Key", "wrong-key")
-                        .content("{\"message\":\"test\"}"))
+                        .content("{\"input\":\"2+3\"}"))
                 .andExpect(status().isUnauthorized());
     }
 

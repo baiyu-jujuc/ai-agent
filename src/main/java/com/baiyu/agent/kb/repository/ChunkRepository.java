@@ -9,5 +9,6 @@ import java.util.List;
 @Repository
 public interface ChunkRepository extends JpaRepository<Chunk, String> {
     List<Chunk> findByVersionIdAndEnabledTrue(String versionId);
+    List<Chunk> findByVersionId(String versionId);
     List<Chunk> findBySpaceIdAndEnabledTrue(String spaceId);
 }

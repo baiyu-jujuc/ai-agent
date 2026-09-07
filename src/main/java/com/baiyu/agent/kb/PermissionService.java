@@ -6,6 +6,7 @@ import com.baiyu.agent.kb.repository.KnowledgeSpaceRepository;
 import com.baiyu.agent.kb.repository.SpaceMemberRepository;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -60,6 +61,10 @@ public class PermissionService {
     public void removeMember(String spaceId, String userId) {
         memberRepo.findBySpaceIdAndUserId(spaceId, userId)
                 .ifPresent(memberRepo::delete);
+    }
+
+    public List<SpaceMember> listMembers(String spaceId) {
+        return memberRepo.findBySpaceId(spaceId);
     }
 
     private boolean isValidRole(String role) {

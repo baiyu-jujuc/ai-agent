@@ -5,7 +5,10 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "kb_document")
+@Table(name = "kb_document",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_kb_document_space_filename",
+                columnNames = {"space_id", "filename"}))
 public class Document {
 
     @Id

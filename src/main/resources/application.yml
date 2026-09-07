@@ -22,12 +22,11 @@ spring:
       max-file-size: 10MB
       max-request-size: 12MB
 
-  # B1: Conditionally exclude Qdrant auto-config.
-  # Default (memory mode): Qdrant auto-config excluded to avoid requiring EmbeddingModel bean.
-  # Qdrant mode: set EXCLUDE_QDRANT= (empty) to enable Qdrant auto-config.
+  # Qdrant VectorStore is created explicitly in VectorStoreConfig.
+  # The starter auto-config is always excluded so memory mode never requires an EmbeddingModel.
   autoconfigure:
     exclude:
-      ${EXCLUDE_QDRANT:org.springframework.ai.vectorstore.qdrant.autoconfigure.QdrantVectorStoreAutoConfiguration}
+      org.springframework.ai.vectorstore.qdrant.autoconfigure.QdrantVectorStoreAutoConfiguration
 
   # H2 Database (development)
   datasource:
@@ -41,6 +40,7 @@ spring:
       path: /h2-console
   # JPA / Hibernate
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: update
     show-sql: ${JPA_SHOW_SQL:false}

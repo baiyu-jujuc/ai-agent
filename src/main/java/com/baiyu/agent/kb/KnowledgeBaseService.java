@@ -4,7 +4,9 @@ import com.baiyu.agent.kb.entity.*;
 import com.baiyu.agent.kb.repository.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.reader.pdf.PagePdfDocumentReader;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -21,6 +23,7 @@ public class KnowledgeBaseService {
     private static final int CHUNK_SIZE = 500;
     private static final int CHUNK_OVERLAP = 100;
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
+    private static final double MIN_SEARCH_SCORE = 0.0001;
 
     private final KnowledgeSpaceRepository spaceRepo;
     private final DocumentRepository docRepo;
@@ -76,22 +79,23 @@ public class KnowledgeBaseService {
 
         String filename = file.getOriginalFilename();
         String mimeType = file.getContentType();
-        String content = new String(file.getBytes(), StandardCharsets.UTF_8);
+        String content = extractText(file, filename);
+        if (content == null || content.isBlank()) {
+            throw new IllegalArgumentException("无法从文件中提取文本内容");
+        }
         String hash = sha256(file.getBytes());
 
-        Document doc = new Document(spaceId, filename, mimeType);
+        Document doc = docRepo.findBySpaceIdAndFilename(spaceId, filename)
+                .orElseGet(() -> new Document(spaceId, filename, mimeType));
         doc.setStatus("parsing");
         doc = docRepo.save(doc);
 
-        int versionNo = 1;
         List<DocumentVersion> existing = versionRepo.findByDocumentIdOrderByVersionNoDesc(doc.getId());
-        if (!existing.isEmpty()) {
-            versionNo = existing.get(0).getVersionNo() + 1;
-            for (DocumentVersion v : existing) {
-                v.setActive(false);
-                versionRepo.save(v);
-                disableChunksForVersion(v.getId());
-            }
+        int versionNo = existing.isEmpty() ? 1 : existing.get(0).getVersionNo() + 1;
+        for (DocumentVersion v : existing) {
+            v.setActive(false);
+            versionRepo.save(v);
+            disableChunksForVersion(v.getId());
         }
 
         DocumentVersion version = new DocumentVersion(doc.getId(), spaceId, versionNo);
@@ -119,6 +123,12 @@ public class KnowledgeBaseService {
         return versionRepo.findByDocumentIdOrderByVersionNoDesc(documentId);
     }
 
+    public String getDocumentSpaceId(String documentId) {
+        return docRepo.findById(documentId)
+                .map(Document::getSpaceId)
+                .orElseThrow(() -> new IllegalArgumentException("文档不存在: " + documentId));
+    }
+
     public DocumentVersion getActiveVersion(String documentId) {
         return versionRepo.findByDocumentIdAndActiveTrue(documentId)
                 .orElseThrow(() -> new IllegalArgumentException("文档没有活跃版本: " + documentId));
@@ -130,6 +140,12 @@ public class KnowledgeBaseService {
         DocumentVersion target = versionRepo.findByDocumentIdAndVersionNo(documentId, targetVersionNo)
                 .orElseThrow(() -> new IllegalArgumentException("版本不存在: " + targetVersionNo));
 
+        int previousActiveNo = all.stream()
+                .filter(DocumentVersion::isActive)
+                .mapToInt(DocumentVersion::getVersionNo)
+                .findFirst()
+                .orElse(0);
+
         for (DocumentVersion v : all) {
             v.setActive(false);
             versionRepo.save(v);
@@ -137,7 +153,7 @@ public class KnowledgeBaseService {
         }
 
         target.setActive(true);
-        target.setRollbackFromVersion(all.get(0).getVersionNo());
+        target.setRollbackFromVersion(previousActiveNo);
         versionRepo.save(target);
         enableChunksForVersion(target.getId());
 
@@ -150,10 +166,30 @@ public class KnowledgeBaseService {
         String queryLower = query.toLowerCase();
         return spaceChunks.stream()
                 .map(c -> Map.entry(c, scoreSimilarity(c.getContent().toLowerCase(), queryLower)))
+                .filter(e -> e.getValue() >= MIN_SEARCH_SCORE)
                 .sorted((a, b) -> Double.compare(b.getValue(), a.getValue()))
                 .limit(topK)
                 .map(Map.Entry::getKey)
                 .toList();
+    }
+
+    private String extractText(MultipartFile file, String filename) throws IOException {
+        byte[] bytes = file.getBytes();
+        if (filename != null && filename.toLowerCase().endsWith(".pdf")) {
+            try {
+                List<org.springframework.ai.document.Document> pages =
+                        new PagePdfDocumentReader(new ByteArrayResource(bytes)).get();
+                return pages.stream()
+                        .map(org.springframework.ai.document.Document::getText)
+                        .filter(text -> text != null && !text.isBlank())
+                        .reduce((a, b) -> a + "\n\n" + b)
+                        .orElse("");
+            } catch (Exception e) {
+                log.warn("PDF parse failed for '{}': {}", filename, e.getMessage());
+                throw new IllegalArgumentException("PDF 解析失败，请确认文件未损坏");
+            }
+        }
+        return new String(bytes, StandardCharsets.UTF_8);
     }
 
     private double scoreSimilarity(String text, String query) {
@@ -218,7 +254,7 @@ public class KnowledgeBaseService {
     }
 
     private void disableChunksForVersion(String versionId) {
-        List<Chunk> chunks = chunkRepo.findByVersionIdAndEnabledTrue(versionId);
+        List<Chunk> chunks = chunkRepo.findByVersionId(versionId);
         for (Chunk c : chunks) {
             c.setEnabled(false);
         }
@@ -226,7 +262,7 @@ public class KnowledgeBaseService {
     }
 
     private void enableChunksForVersion(String versionId) {
-        List<Chunk> chunks = chunkRepo.findByVersionIdAndEnabledTrue(versionId);
+        List<Chunk> chunks = chunkRepo.findByVersionId(versionId);
         for (Chunk c : chunks) {
             c.setEnabled(true);
         }

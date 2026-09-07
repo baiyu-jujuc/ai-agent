@@ -160,7 +160,7 @@ public class RagService {
             return "File is empty";
         }
         if (file.getSize() > MAX_FILE_SIZE) {
-            return "File too large (max " + (MAX_FILE_SIZE / 1024 / 1024) + "MB)";
+            throw new org.springframework.web.multipart.MaxUploadSizeExceededException(MAX_FILE_SIZE);
         }
 
         String filename = file.getOriginalFilename();

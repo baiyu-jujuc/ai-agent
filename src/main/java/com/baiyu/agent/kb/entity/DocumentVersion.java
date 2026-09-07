@@ -5,7 +5,10 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "kb_document_version")
+@Table(name = "kb_document_version",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_kb_document_version",
+                columnNames = {"document_id", "version_no"}))
 public class DocumentVersion {
 
     @Id
