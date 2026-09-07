@@ -52,3 +52,6 @@ onnx-cache/
 # 本地参考文档（非源码）
 deploy-guide.html
 *.bak
+
+# TRAE
+.trae*

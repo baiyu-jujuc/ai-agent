@@ -9,4 +9,6 @@ public interface OrchestrationStrategy {
     String getName();
 
     Map<String, String> execute(String input, List<Message> context, List<String> agentNames);
+
+    OrchestrationResult executeWithTrace(String input, List<Message> context, List<String> agentNames);
 }

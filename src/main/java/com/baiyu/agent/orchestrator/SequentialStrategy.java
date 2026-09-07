@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,7 +27,13 @@ public class SequentialStrategy implements OrchestrationStrategy {
 
     @Override
     public Map<String, String> execute(String input, List<Message> context, List<String> agentNames) {
+        return executeWithTrace(input, context, agentNames).getAgentResults();
+    }
+
+    @Override
+    public OrchestrationResult executeWithTrace(String input, List<Message> context, List<String> agentNames) {
         Map<String, String> results = new LinkedHashMap<>();
+        List<TaskTrace> traces = new ArrayList<>();
         String accumulatedContext = input;
 
         for (String agentName : agentNames) {
@@ -34,17 +41,23 @@ public class SequentialStrategy implements OrchestrationStrategy {
             if (agent == null) {
                 log.warn("Agent not found: {}", agentName);
                 results.put(agentName, "[error] agent not found");
+                traces.add(TaskTrace.error(agentName, accumulatedContext, "agent not found", 0));
                 continue;
             }
+            long start = System.currentTimeMillis();
             try {
                 String result = agent.execute(accumulatedContext, context);
+                long duration = System.currentTimeMillis() - start;
                 results.put(agentName, result);
+                traces.add(TaskTrace.success(agentName, accumulatedContext, result, duration));
                 accumulatedContext = result;
             } catch (Exception e) {
+                long duration = System.currentTimeMillis() - start;
                 log.error("Agent {} failed: {}", agentName, e.getMessage());
                 results.put(agentName, "[error] " + e.getMessage());
+                traces.add(TaskTrace.error(agentName, accumulatedContext, e.getMessage(), duration));
             }
         }
-        return results;
+        return new OrchestrationResult("sequential", results, traces);
     }
 }

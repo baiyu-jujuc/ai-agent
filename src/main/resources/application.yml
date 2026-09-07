@@ -16,6 +16,19 @@ spring:
   application:
     name: ai-agent
 
+  # B2: Allow file uploads up to 10MB (matches RagService.MAX_FILE_SIZE)
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 12MB
+
+  # B1: Conditionally exclude Qdrant auto-config.
+  # Default (memory mode): Qdrant auto-config excluded to avoid requiring EmbeddingModel bean.
+  # Qdrant mode: set EXCLUDE_QDRANT= (empty) to enable Qdrant auto-config.
+  autoconfigure:
+    exclude:
+      ${EXCLUDE_QDRANT:org.springframework.ai.vectorstore.qdrant.autoconfigure.QdrantVectorStoreAutoConfiguration}
+
   # H2 Database (development)
   datasource:
     url: jdbc:h2:mem:agentdb
@@ -26,6 +39,14 @@ spring:
     console:
       enabled: ${H2_CONSOLE:false}
       path: /h2-console
+  # JPA / Hibernate
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: ${JPA_SHOW_SQL:false}
+    properties:
+      hibernate:
+        format_sql: true
 
   # Redis (Phase 3: chat memory + cache, only used when MEMORY_TYPE=redis)
   data:
@@ -47,14 +68,19 @@ spring:
       api-key: ${DEEPSEEK_API_KEY}
       base-url: https://api.deepseek.com
       chat:
-        model: deepseek-v4-flash
+        model: ${DEFAULT_MODEL:deepseek-v4-flash}
         options:
           temperature: 0.7
           max-tokens: 4096
         completions-path: /chat/completions
+      # B1: Embedding config for Qdrant mode.
+      # DeepSeek does not provide embeddings; use a separate OpenAI-compatible provider.
+      # Only needed when VECTOR_STORE_TYPE=qdrant.
       embedding:
+        api-key: ${EMBEDDING_API_KEY:${DEEPSEEK_API_KEY:}}
+        base-url: ${EMBEDDING_BASE_URL:https://api.openai.com}
         options:
-          model: text-embedding-3-small
+          model: ${EMBEDDING_MODEL:text-embedding-3-small}
 
     # Qdrant Vector Store (Phase 3: production vector store)
     vectorstore:
@@ -66,15 +92,15 @@ spring:
         use-tls: false
         initialize-schema: ${QDRANT_INIT_SCHEMA:false}
 
-# Actuator endpoints
+# B8: Actuator — restrict details, minimize exposure
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        include: health,info
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized
   health:
     redis:
       enabled: ${REDIS_HEALTH:false}
@@ -117,5 +143,5 @@ agent:
 
 logging:
   level:
-    com.baiyu.agent: DEBUG
-    org.springframework.ai: DEBUG
+    com.baiyu.agent: ${LOG_LEVEL:INFO}
+    org.springframework.ai: ${AI_LOG_LEVEL:INFO}

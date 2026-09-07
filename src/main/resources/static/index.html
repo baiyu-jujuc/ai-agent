@@ -107,6 +107,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 
 @media(max-width:900px){.right-panel{display:none}.sidebar{width:200px}}
 @media(max-width:600px){.sidebar{display:none}}
+.trace-list{margin:8px 0}.trace-item{animation:msgIn .3s ease}
 </style>
 </head>
 <body>
@@ -135,7 +136,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <div class="toggle-switch" id="toolsToggle"><div class="toggle-knob"></div></div>
     </div>
     <div class="toggle-row">
-      <span>流式输出</span>
+      <span>流式输出 (支持指定 Agent)</span>
       <div class="toggle-switch" id="streamToggle"><div class="toggle-knob"></div></div>
     </div>
   </div>
@@ -154,6 +155,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <div class="agent-list">
       <div class="agent-item" id="newChatBtn" style="cursor:pointer"><div class="agent-dot" style="background:var(--accent)"></div>新对话</div>
       <div class="agent-item" id="clearChatBtn" style="cursor:pointer"><div class="agent-dot" style="background:var(--red)"></div>清空记录</div>
+      <div class="agent-item" id="demoBtn" style="cursor:pointer"><div class="agent-dot" style="background:var(--accent)"></div>多 Agent 演示</div>
     </div>
   </div>
   <div class="sidebar-section" style="margin-top:auto">
@@ -310,6 +312,36 @@ document.getElementById('clearChatBtn').addEventListener('click',async()=>{
   catch(e){}
 });
 
+document.getElementById('demoBtn').addEventListener('click',async()=>{
+  const demoPrompt='请研究 Java 虚拟线程与线程池的适用场景，给出一个最小可运行示例，再从性能、可维护性、风险三个维度输出对比分析。';
+  addMessage('user',demoPrompt);
+  const sendBtn=document.getElementById('sendBtn');sendBtn.disabled=true;sendBtn.textContent='编排中...';
+  try{
+    const body={message:demoPrompt,conversationId,strategy:'sequential',agents:['research','code']};
+    const res=await apiFetch('/api/chat/orchestrate',{method:'POST',body:JSON.stringify(body)});
+    const data=await res.json();
+    if(data.error){addMessage('assistant','编排失败: '+data.error);return;}
+    const results=data.agentResults||{};
+    for(const[agent,output]of Object.entries(results)){
+      addMessage('assistant',output,'Agent: '+agent);
+    }
+    if(data.traces&&data.traces.length>0){
+      let traceHtml='<div class="trace-list">';
+      for(const t of data.traces){
+        const color=t.status==='success'?'var(--green)':'var(--red)';
+        traceHtml+=`<div class="trace-item" style="border-left:3px solid ${color};padding:6px 10px;margin:4px 0;background:var(--bg);border-radius:4px">`+
+          `<div style="font-size:12px;color:var(--accent-light);font-weight:600">${t.agent} <span style="color:${color}">[${t.status}]</span> <span style="color:var(--text-dim)">${t.durationMs}ms</span></div>`+
+          `<div style="font-size:11px;color:var(--text-dim);margin-top:2px">输入: ${t.inputSummary}</div>`+
+          `<div style="font-size:11px;color:var(--text-dim)">输出: ${t.outputSummary}</div>`+
+          `</div>`;
+      }
+      traceHtml+='</div>';
+      addMessage('assistant','<strong>执行轨迹</strong>'+traceHtml,'Orchestration Trace');
+    }
+  }catch(err){addMessage('assistant','编排请求失败: '+err.message);}
+  finally{sendBtn.disabled=false;sendBtn.textContent='发送';}
+});
+
 const input=document.getElementById('input');
 input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}});
 input.addEventListener('input',()=>{input.style.height='auto';input.style.height=Math.min(input.scrollHeight,120)+'px';});
@@ -326,19 +358,27 @@ async function sendMessage(){
     if(useStream){
       const typingEl=addTypingIndicator();
       let fullText='';
-      const endpoint=useTools?'/api/chat/stream':'/api/chat/stream';
-      const params=new URLSearchParams({message:text,conversationId,model:selectedModel});
+      const params=new URLSearchParams({message:text,conversationId,model:selectedModel,agent:selectedAgent,useTools:useTools?'true':'false'});
       const url=getBaseUrl()+'/api/chat/stream?'+params.toString();
-      const res=await fetch(url,{headers:{'X-API-Key':getApiKey()}});
+      const res=await fetch(url,{headers:{'X-API-Key':getApiKey(),'Accept':'text/event-stream'}});
       if(!res.ok){throw new Error('HTTP '+res.status);}
       const reader=res.body.getReader();
       const decoder=new TextDecoder();
       typingEl.innerHTML='';
+      let buffer='';
       while(true){
         const{done,value}=await reader.read();
         if(done)break;
-        const chunk=decoder.decode(value,{stream:true});
-        fullText+=chunk;
+        buffer+=decoder.decode(value,{stream:true});
+        const lines=buffer.split('\n');
+        buffer=lines.pop();
+        for(const line of lines){
+          if(line.startsWith('data:')){
+            const data=line.slice(5).trim();
+            if(data==='[DONE]')break;
+            try{fullText+=JSON.parse(data);}catch{fullText+=data;}
+          }
+        }
         typingEl.innerHTML=renderMarkdown(fullText);
         typingEl.scrollIntoView({behavior:'smooth'});
       }

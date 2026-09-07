@@ -20,6 +20,7 @@ public class ChatMemoryService {
 
     private static final Logger log = LoggerFactory.getLogger(ChatMemoryService.class);
     private static final String REDIS_KEY_PREFIX = "chat:memory:";
+    private static final String REDIS_CONVERSATION_INDEX = "chat:conversations:index";
     private static final long REDIS_TTL_HOURS = 24;
 
     @Value("${agent.storage.memory:memory}")
@@ -63,6 +64,7 @@ public class ChatMemoryService {
         if (useRedis()) {
             try {
                 redisTemplate.delete(REDIS_KEY_PREFIX + conversationId);
+                redisTemplate.opsForZSet().remove(REDIS_CONVERSATION_INDEX, conversationId);
             } catch (Exception e) {
                 log.warn("Redis clear failed: {}", e.getMessage());
             }
@@ -74,16 +76,12 @@ public class ChatMemoryService {
     public Set<String> getConversationIds() {
         if (useRedis()) {
             try {
-                Set<String> keys = redisTemplate.keys(REDIS_KEY_PREFIX + "*");
-                if (keys == null || keys.isEmpty()) return Collections.emptySet();
-                Set<String> ids = new HashSet<>();
-                for (String key : keys) {
-                    ids.add(key.substring(REDIS_KEY_PREFIX.length()));
-                }
+                Set<String> ids = redisTemplate.opsForZSet().reverseRange(REDIS_CONVERSATION_INDEX, 0, -1);
+                if (ids == null || ids.isEmpty()) return Collections.emptySet();
                 return ids;
             } catch (Exception e) {
-                log.warn("Redis keys scan failed: {}", e.getMessage());
-                return conversations.keySet();
+                log.warn("Redis conversation index read failed: {}", e.getMessage());
+                return Collections.emptySet();
             }
         }
         return conversations.keySet();
@@ -147,6 +145,20 @@ public class ChatMemoryService {
             Long size = redisTemplate.opsForList().size(key);
             if (size != null && size > maxMessages) {
                 redisTemplate.opsForList().trim(key, size - maxMessages, -1);
+            }
+
+            redisTemplate.opsForZSet().add(REDIS_CONVERSATION_INDEX, conversationId, System.currentTimeMillis());
+
+            Long convCount = redisTemplate.opsForZSet().size(REDIS_CONVERSATION_INDEX);
+            if (convCount != null && convCount > maxConversations) {
+                Set<String> oldest = redisTemplate.opsForZSet().range(REDIS_CONVERSATION_INDEX, 0, (int)(convCount - maxConversations - 1));
+                if (oldest != null) {
+                    for (String oldId : oldest) {
+                        redisTemplate.delete(REDIS_KEY_PREFIX + oldId);
+                        redisTemplate.opsForZSet().remove(REDIS_CONVERSATION_INDEX, oldId);
+                    }
+                    log.info("Evicted {} oldest conversations from Redis (limit: {})", oldest.size(), maxConversations);
+                }
             }
         } catch (Exception e) {
             log.warn("Redis write failed, falling back to in-memory: {}", e.getMessage());

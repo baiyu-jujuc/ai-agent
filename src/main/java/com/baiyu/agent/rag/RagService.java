@@ -4,10 +4,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
+import org.springframework.ai.reader.TextReader;
+import org.springframework.ai.reader.markdown.MarkdownDocumentReader;
+import org.springframework.ai.reader.markdown.config.MarkdownDocumentReaderConfig;
+import org.springframework.ai.reader.pdf.PagePdfDocumentReader;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -25,6 +30,7 @@ public class RagService {
     private static final Logger log = LoggerFactory.getLogger(RagService.class);
     private static final int CHUNK_SIZE = 500;
     private static final int CHUNK_OVERLAP = 100;
+    private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
 
     private final ChatClient chatClient;
     private final VectorStore vectorStore;
@@ -150,8 +156,76 @@ public class RagService {
     }
 
     public String uploadAndIndex(MultipartFile file) throws IOException {
-        String content = new String(file.getBytes(), StandardCharsets.UTF_8);
-        return addTextFile(file.getOriginalFilename(), content);
+        if (file.isEmpty()) {
+            return "File is empty";
+        }
+        if (file.getSize() > MAX_FILE_SIZE) {
+            return "File too large (max " + (MAX_FILE_SIZE / 1024 / 1024) + "MB)";
+        }
+
+        String filename = file.getOriginalFilename();
+        String contentType = file.getContentType();
+        List<Document> documents = readDocuments(file, filename, contentType);
+
+        if (documents.isEmpty()) {
+            return "No readable content extracted from '" + filename + "'";
+        }
+
+        List<Document> chunks = new ArrayList<>();
+        for (Document doc : documents) {
+            Map<String, Object> metadata = new java.util.HashMap<>(doc.getMetadata());
+            metadata.put("filename", filename);
+            metadata.put("source", "upload");
+            metadata.put("timestamp", Instant.now().toString());
+            chunks.addAll(chunkDocument(doc.getText(), metadata));
+        }
+
+        try {
+            vectorStore.add(chunks);
+            return "File '" + filename + "' added (" + chunks.size() + " chunks) to " + getStoreTypeName();
+        } catch (Exception e) {
+            log.error("Failed to index file '{}': {}", filename, e.getMessage());
+            return "Failed to index file: " + e.getMessage();
+        }
+    }
+
+    private List<Document> readDocuments(MultipartFile file, String filename, String contentType) throws IOException {
+        ByteArrayResource resource = new ByteArrayResource(file.getBytes());
+
+        if (isPdf(contentType, filename)) {
+            try {
+                PagePdfDocumentReader reader = new PagePdfDocumentReader(resource);
+                return reader.get();
+            } catch (Exception e) {
+                log.warn("PDF read failed, falling back to text: {}", e.getMessage());
+                return List.of(new Document(new String(file.getBytes(), StandardCharsets.UTF_8)));
+            }
+        }
+
+        if (isMarkdown(contentType, filename)) {
+            try {
+                MarkdownDocumentReader reader = new MarkdownDocumentReader(resource,
+                        MarkdownDocumentReaderConfig.builder().build());
+                return reader.get();
+            } catch (Exception e) {
+                log.warn("Markdown read failed, falling back to text: {}", e.getMessage());
+                return List.of(new Document(new String(file.getBytes(), StandardCharsets.UTF_8)));
+            }
+        }
+
+        TextReader reader = new TextReader(resource);
+        reader.getCustomMetadata().put("filename", filename);
+        return reader.get();
+    }
+
+    private boolean isPdf(String contentType, String filename) {
+        return "application/pdf".equals(contentType)
+                || (filename != null && filename.toLowerCase().endsWith(".pdf"));
+    }
+
+    private boolean isMarkdown(String contentType, String filename) {
+        return "text/markdown".equals(contentType)
+                || (filename != null && filename.toLowerCase().endsWith(".md"));
     }
 
     public String getVectorStoreType() {

@@ -14,6 +14,7 @@ import org.springframework.ai.openai.OpenAiEmbeddingOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -45,6 +46,12 @@ public class AiConfig {
 
     @Value("${spring.ai.openai.embedding.options.model:text-embedding-3-small}")
     private String embeddingModel;
+
+    @Value("${spring.ai.embedding.api-key:${DEEPSEEK_API_KEY:}}")
+    private String embeddingApiKey;
+
+    @Value("${spring.ai.embedding.base-url:${spring.ai.openai.base-url:https://api.deepseek.com}}")
+    private String embeddingBaseUrl;
 
     @Value("${agent.timeout-seconds:60}")
     private int timeoutSeconds;
@@ -94,8 +101,19 @@ public class AiConfig {
 
     @Bean
     @ConditionalOnMissingBean(EmbeddingModel.class)
-    public EmbeddingModel embeddingModel(OpenAiApi openAiApi) {
-        return new OpenAiEmbeddingModel(openAiApi, MetadataMode.EMBED,
+    @ConditionalOnProperty(name = "agent.storage.vector-store", havingValue = "qdrant")
+    public EmbeddingModel embeddingModel() {
+        SimpleClientHttpRequestFactory restFactory = new SimpleClientHttpRequestFactory();
+        restFactory.setConnectTimeout(15000);
+        restFactory.setReadTimeout(timeoutSeconds * 1000);
+
+        OpenAiApi embeddingApi = OpenAiApi.builder()
+                .baseUrl(embeddingBaseUrl)
+                .apiKey(embeddingApiKey)
+                .restClientBuilder(RestClient.builder().requestFactory(restFactory))
+                .build();
+
+        return new OpenAiEmbeddingModel(embeddingApi, MetadataMode.EMBED,
                 OpenAiEmbeddingOptions.builder()
                         .model(embeddingModel)
                         .build());

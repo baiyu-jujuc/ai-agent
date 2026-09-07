@@ -2,16 +2,19 @@ package com.baiyu.agent.api;
 
 import com.baiyu.agent.agent.Agent;
 import com.baiyu.agent.agent.CoordinatorAgent;
+import com.baiyu.agent.config.ModelRegistry;
 import com.baiyu.agent.memory.ChatMemoryService;
+import com.baiyu.agent.orchestrator.OrchestrationResult;
 import com.baiyu.agent.orchestrator.OrchestrationStrategy;
 import com.baiyu.agent.rag.RagService;
 import com.baiyu.agent.tool.FunctionCallingService;
-import com.baiyu.agent.tool.ToolComponent;
+import com.baiyu.agent.tool.ToolRegistry;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.ChatOptions;
-import org.springframework.ai.tool.annotation.Tool;
+import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 
@@ -26,28 +29,31 @@ public class ChatController {
     private final CoordinatorAgent coordinatorAgent;
     private final Map<String, Agent> agents;
     private final ChatMemoryService memoryService;
-    private final List<ToolComponent> toolComponents;
+    private final ToolRegistry toolRegistry;
     private final FunctionCallingService functionCallingService;
     private final RagService ragService;
     private final Map<String, OrchestrationStrategy> strategies;
+    private final ModelRegistry modelRegistry;
 
     public ChatController(ChatModel chatModel, ChatClient chatClient,
                          CoordinatorAgent coordinatorAgent,
                          Map<String, Agent> agents,
                          ChatMemoryService memoryService,
-                         List<ToolComponent> toolComponents,
+                         ToolRegistry toolRegistry,
                          FunctionCallingService functionCallingService,
                          RagService ragService,
-                         Map<String, OrchestrationStrategy> strategies) {
+                         Map<String, OrchestrationStrategy> strategies,
+                         ModelRegistry modelRegistry) {
         this.chatModel = chatModel;
         this.chatClient = chatClient;
         this.coordinatorAgent = coordinatorAgent;
         this.agents = agents;
         this.memoryService = memoryService;
-        this.toolComponents = toolComponents;
+        this.toolRegistry = toolRegistry;
         this.functionCallingService = functionCallingService;
         this.ragService = ragService;
         this.strategies = strategies;
+        this.modelRegistry = modelRegistry;
     }
 
     private static final int MAX_MESSAGE_LENGTH = 10000;
@@ -62,7 +68,7 @@ public class ChatController {
             throw new IllegalArgumentException("message 超过最大长度限制 (" + MAX_MESSAGE_LENGTH + " 字符)");
         }
         String conversationId = request.getOrDefault("conversationId", "default");
-        String model = request.getOrDefault("model", "deepseek-v4-flash");
+        String model = request.getOrDefault("model", modelRegistry.getDefaultModel());
         boolean useTools = Boolean.parseBoolean(request.getOrDefault("useTools", "false"));
 
         List<Message> history = memoryService.getHistory(conversationId);
@@ -79,8 +85,7 @@ public class ChatController {
                 response = "AI 返回了空回复，请重试。";
             }
         } catch (Exception e) {
-            response = "请求失败: " + e.getClass().getSimpleName() + " — " +
-                    (e.getMessage() != null ? e.getMessage() : "未知错误");
+            response = "请求失败，请稍后重试。";
         }
         memoryService.addAssistantMessage(conversationId, response);
 
@@ -92,29 +97,66 @@ public class ChatController {
         return result;
     }
 
-    @GetMapping(value = "/stream")
-    public Flux<String> streamChat(@RequestParam String message,
-                                   @RequestParam(defaultValue = "default") String conversationId,
-                                   @RequestParam(defaultValue = "deepseek-v4-flash") String model) {
+    /**
+     * B3: Two distinct streaming paths:
+     * 1. Normal streaming (useTools=false, agent=coordinator): true SSE streaming via chatClient.stream()
+     * 2. Tool/agent mode (useTools=true or agent!=coordinator): blocking call, result emitted as single SSE event
+     */
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<String>> streamChat(
+            @RequestParam String message,
+            @RequestParam(defaultValue = "default") String conversationId,
+            @RequestParam(required = false) String model,
+            @RequestParam(defaultValue = "coordinator") String agent,
+            @RequestParam(defaultValue = "false") boolean useTools) {
         if (message == null || message.isBlank()) {
             throw new IllegalArgumentException("message 不能为空");
         }
         if (message.length() > MAX_MESSAGE_LENGTH) {
             throw new IllegalArgumentException("message 超过最大长度限制");
         }
+        String resolvedModel = (model == null || model.isBlank()) ? modelRegistry.getDefaultModel() : model;
+
         List<Message> history = memoryService.getHistory(conversationId);
         memoryService.addUserMessage(conversationId, message);
 
         StringBuilder reply = new StringBuilder();
-        return chatClient.prompt()
-                .messages(history)
-                .user(message)
-                .options(ChatOptions.builder().model(model).build())
-                .stream()
-                .content()
+        Flux<String> contentFlux;
+
+        boolean useToolPath = useTools || (!"coordinator".equals(agent) && agents.containsKey(agent));
+
+        if (useToolPath) {
+            // B3: Tool/agent path — blocking, result as single event
+            Agent targetAgent = agents.getOrDefault(agent, coordinatorAgent);
+            try {
+                String result = useTools
+                        ? functionCallingService.executeWithTools(message, resolvedModel, history)
+                        : targetAgent.executeWithModel(message, resolvedModel, history);
+                contentFlux = Flux.just(result == null ? "" : result);
+            } catch (Exception e) {
+                contentFlux = Flux.just("Agent 执行失败，请稍后重试。");
+            }
+        } else {
+            // B3: True streaming path via chatClient
+            contentFlux = chatClient.prompt()
+                    .messages(history)
+                    .user(message)
+                    .options(ChatOptions.builder().model(resolvedModel).build())
+                    .stream()
+                    .content();
+        }
+
+        return contentFlux
                 .doOnNext(reply::append)
-                .doOnComplete(() -> memoryService.addAssistantMessage(conversationId, reply.toString()))
-                .doOnError(e -> memoryService.addAssistantMessage(conversationId, "[stream error] " + e.getMessage()));
+                .map(chunk -> ServerSentEvent.<String>builder().data(chunk).build())
+                .doOnComplete(() -> {
+                    String finalReply = reply.toString();
+                    if (!finalReply.isBlank()) {
+                        memoryService.addAssistantMessage(conversationId, finalReply);
+                    }
+                })
+                .doOnError(e -> memoryService.addAssistantMessage(conversationId, "[stream error] " + e.getMessage()))
+                .concatWith(Flux.just(ServerSentEvent.<String>builder().event("done").data("[DONE]").build()));
     }
 
     @PostMapping("/agent/{agentName}")
@@ -128,7 +170,7 @@ public class ChatController {
             throw new IllegalArgumentException("message 超过最大长度限制");
         }
         String conversationId = request.getOrDefault("conversationId", "default");
-        String model = request.getOrDefault("model", "deepseek-v4-flash");
+        String model = request.getOrDefault("model", modelRegistry.getDefaultModel());
 
         List<Message> history = memoryService.getHistory(conversationId);
         memoryService.addUserMessage(conversationId, message);
@@ -142,7 +184,7 @@ public class ChatController {
         try {
             response = targetAgent.executeWithModel(message, model, history);
         } catch (Exception e) {
-            response = "Agent 执行失败: " + e.getMessage();
+            response = "Agent 执行失败，请稍后重试。";
         }
         memoryService.addAssistantMessage(conversationId, response);
 
@@ -164,27 +206,39 @@ public class ChatController {
             throw new IllegalArgumentException("message 超过最大长度限制 (" + MAX_MESSAGE_LENGTH + " 字符)");
         }
         String strategyName = (String) request.getOrDefault("strategy", "sequential");
-        @SuppressWarnings("unchecked")
-        List<String> agentNames = (List<String>) request.getOrDefault("agents", List.of("code", "research"));
+        Object agentsParam = request.get("agents");
+        List<String> agentNames;
+        if (agentsParam instanceof List<?> list) {
+            agentNames = list.stream().map(Object::toString).toList();
+        } else {
+            agentNames = List.of("code", "research");
+        }
+        if (agentNames.isEmpty()) {
+            throw new IllegalArgumentException("agents 不能为空");
+        }
         String conversationId = (String) request.getOrDefault("conversationId", "default");
 
         OrchestrationStrategy strategy = strategies.get(strategyName);
+        if (strategy == null) {
+            strategy = strategies.get(strategyName + "Strategy");
+        }
         if (strategy == null) {
             return Map.of("error", "Unknown strategy: " + strategyName + ". Available: " + strategies.keySet());
         }
 
         List<Message> history = memoryService.getHistory(conversationId);
         memoryService.addUserMessage(conversationId, input);
-        Map<String, String> results = strategy.execute(input, history, agentNames);
+        OrchestrationResult orchResult = strategy.executeWithTrace(input, history, agentNames);
 
-        String combined = results.values().stream()
+        String combined = orchResult.getAgentResults().values().stream()
                 .reduce((a, b) -> a + "\n\n---\n\n" + b)
                 .orElse("No results");
         memoryService.addAssistantMessage(conversationId, combined);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("strategy", strategyName);
-        result.put("agentResults", results);
+        result.put("agentResults", orchResult.getAgentResults());
+        result.put("traces", orchResult.getTraces());
         result.put("conversationId", conversationId);
         return result;
     }
@@ -198,26 +252,12 @@ public class ChatController {
 
     @GetMapping("/models")
     public List<Map<String, String>> getModels() {
-        List<Map<String, String>> models = new ArrayList<>();
-        models.add(Map.of("id", "deepseek-v4-flash", "name", "DeepSeek V4 Flash (低成本)", "description", "快速响应，适合日常对话"));
-        models.add(Map.of("id", "deepseek-v4-pro", "name", "DeepSeek V4 Pro (高性能)", "description", "最强推理能力，适合复杂任务"));
-        models.add(Map.of("id", "deepseek-v4-flash-vision-exp", "name", "DeepSeek V4 Vision", "description", "支持图像输入(实验)"));
-        return models;
+        return modelRegistry.listModels();
     }
 
     @GetMapping("/tools")
     public List<Map<String, String>> getTools() {
-        List<Map<String, String>> result = new ArrayList<>();
-        for (Object tool : toolComponents) {
-            for (var method : tool.getClass().getDeclaredMethods()) {
-                Tool t = method.getAnnotation(Tool.class);
-                if (t != null) {
-                    String name = t.name().isEmpty() ? method.getName() : t.name();
-                    result.add(Map.of("name", name, "description", t.description()));
-                }
-            }
-        }
-        return result;
+        return toolRegistry.listTools();
     }
 
     @GetMapping("/history/{conversationId}")

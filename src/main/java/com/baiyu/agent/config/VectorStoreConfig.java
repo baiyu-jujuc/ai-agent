@@ -55,22 +55,58 @@ public class VectorStoreConfig {
         public List<Document> similaritySearch(SearchRequest request) {
             if (store.isEmpty()) return Collections.emptyList();
             String query = request.getQuery().toLowerCase();
+            double threshold = request.getSimilarityThreshold();
+            int topK = request.getTopK();
             return store.values().stream()
-                    .sorted((a, b) -> {
-                        double scoreA = cosineSim(a.getText().toLowerCase(), query);
-                        double scoreB = cosineSim(b.getText().toLowerCase(), query);
-                        return Double.compare(scoreB, scoreA);
+                    .map(doc -> {
+                        double score = cosineSim(doc.getText().toLowerCase(), query);
+                        return Map.entry(doc, score);
                     })
-                    .limit(request.getTopK())
+                    .filter(e -> threshold <= 0 || e.getValue() >= threshold)
+                    .sorted((a, b) -> Double.compare(b.getValue(), a.getValue()))
+                    .limit(topK)
+                    .map(Map.Entry::getKey)
                     .toList();
         }
 
         private double cosineSim(String text, String query) {
-            Set<String> textWords = new HashSet<>(Arrays.asList(text.split("\\s+")));
-            Set<String> queryWords = new HashSet<>(Arrays.asList(query.split("\\s+")));
-            long matches = queryWords.stream().filter(textWords::contains).count();
-            if (queryWords.isEmpty()) return 0;
-            return (double) matches / Math.sqrt(textWords.size() * queryWords.size());
+            Set<String> textTokens = tokenize(text);
+            Set<String> queryTokens = tokenize(query);
+            if (queryTokens.isEmpty() || textTokens.isEmpty()) return 0;
+            long matches = queryTokens.stream().filter(textTokens::contains).count();
+            return (double) matches / Math.sqrt(textTokens.size() * queryTokens.size());
+        }
+
+        private Set<String> tokenize(String text) {
+            Set<String> tokens = new HashSet<>();
+            for (String word : text.split("\\s+")) {
+                if (word.isBlank()) continue;
+                if (containsCjk(word)) {
+                    for (char c : word.toCharArray()) {
+                        if (isCjkChar(c)) {
+                            tokens.add(String.valueOf(c));
+                        } else if (Character.isLetterOrDigit(c)) {
+                            tokens.add(String.valueOf(Character.toLowerCase(c)));
+                        }
+                    }
+                } else {
+                    tokens.add(word.toLowerCase());
+                }
+            }
+            return tokens;
+        }
+
+        private boolean containsCjk(String s) {
+            for (char c : s.toCharArray()) {
+                if (isCjkChar(c)) return true;
+            }
+            return false;
+        }
+
+        private boolean isCjkChar(char c) {
+            return (c >= '\u4E00' && c <= '\u9FFF')
+                    || (c >= '\u3400' && c <= '\u4DBF')
+                    || (c >= '\uF900' && c <= '\uFAFF');
         }
     }
 }

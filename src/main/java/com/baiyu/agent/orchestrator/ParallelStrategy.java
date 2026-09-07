@@ -35,35 +35,52 @@ public class ParallelStrategy implements OrchestrationStrategy {
 
     @Override
     public Map<String, String> execute(String input, List<Message> context, List<String> agentNames) {
+        return executeWithTrace(input, context, agentNames).getAgentResults();
+    }
+
+    private record AgentResult(String name, String output, long duration, String status) {}
+
+    @Override
+    public OrchestrationResult executeWithTrace(String input, List<Message> context, List<String> agentNames) {
         Map<String, String> results = new ConcurrentHashMap<>();
-        List<Future<Map.Entry<String, String>>> futures = new ArrayList<>();
+        List<TaskTrace> traces = Collections.synchronizedList(new ArrayList<>());
+
+        List<Future<AgentResult>> futures = new ArrayList<>();
 
         for (String agentName : agentNames) {
             Agent agent = agents.get(agentName);
             if (agent != null) {
                 futures.add(executor.submit(() -> {
+                    long start = System.currentTimeMillis();
                     try {
                         String result = agent.execute(input, context);
-                        return Map.entry(agentName, result);
+                        long duration = System.currentTimeMillis() - start;
+                        return new AgentResult(agentName, result, duration, "success");
                     } catch (Exception e) {
+                        long duration = System.currentTimeMillis() - start;
                         log.error("Agent {} failed: {}", agentName, e.getMessage());
-                        return Map.entry(agentName, "[error] " + e.getMessage());
+                        return new AgentResult(agentName, "[error] " + e.getMessage(), duration, "error");
                     }
                 }));
             }
         }
 
-        for (Future<Map.Entry<String, String>> f : futures) {
+        for (Future<AgentResult> f : futures) {
             try {
-                Map.Entry<String, String> entry = f.get(timeoutSeconds, TimeUnit.SECONDS);
-                results.put(entry.getKey(), entry.getValue());
+                AgentResult ar = f.get(timeoutSeconds, TimeUnit.SECONDS);
+                results.put(ar.name(), ar.output());
+                traces.add("success".equals(ar.status())
+                        ? TaskTrace.success(ar.name(), input, ar.output(), ar.duration())
+                        : TaskTrace.error(ar.name(), input, ar.output(), ar.duration()));
             } catch (TimeoutException e) {
                 f.cancel(true);
                 log.warn("Agent timed out after {}s", timeoutSeconds);
+                traces.add(TaskTrace.error("unknown", input, "timeout after " + timeoutSeconds + "s", timeoutSeconds * 1000L));
             } catch (Exception e) {
                 log.error("Agent execution failed: {}", e.getMessage());
+                traces.add(TaskTrace.error("unknown", input, e.getMessage(), 0));
             }
         }
-        return results;
+        return new OrchestrationResult("parallel", results, traces);
     }
 }

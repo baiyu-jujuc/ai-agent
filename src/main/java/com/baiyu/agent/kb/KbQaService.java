@@ -1,0 +1,174 @@
+package com.baiyu.agent.kb;
+
+import com.baiyu.agent.kb.entity.*;
+import com.baiyu.agent.kb.repository.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.*;
+
+@Service
+public class KbQaService {
+
+    private static final Logger log = LoggerFactory.getLogger(KbQaService.class);
+    private static final int SEARCH_TOP_K = 5;
+    private static final double HIGH_THRESHOLD = 0.6;
+    private static final double MEDIUM_THRESHOLD = 0.3;
+
+    private final KnowledgeBaseService kbService;
+    private final CitationRepository citationRepo;
+    private final FeedbackRepository feedbackRepo;
+    private final ChatClient chatClient;
+
+    public KbQaService(
+            KnowledgeBaseService kbService,
+            CitationRepository citationRepo,
+            FeedbackRepository feedbackRepo,
+            ChatClient chatClient) {
+        this.kbService = kbService;
+        this.citationRepo = citationRepo;
+        this.feedbackRepo = feedbackRepo;
+        this.chatClient = chatClient;
+    }
+
+    @Transactional
+    public QaResult ask(String spaceId, String question, String conversationId) {
+        if (question == null || question.isBlank()) {
+            throw new IllegalArgumentException("question 不能为空");
+        }
+        if (spaceId == null || spaceId.isBlank()) {
+            throw new IllegalArgumentException("spaceId 不能为空");
+        }
+
+        List<Chunk> chunks = kbService.searchChunks(spaceId, question, SEARCH_TOP_K);
+
+        if (chunks.isEmpty()) {
+            String msgId = UUID.randomUUID().toString();
+            return new QaResult(
+                    msgId,
+                    "抱歉，当前知识空间中没有找到与您问题相关的内容。请尝试上传相关文档或调整问题措辞。",
+                    Collections.emptyList(),
+                    "low",
+                    0.0,
+                    conversationId
+            );
+        }
+
+        String context = buildContext(chunks);
+        String augmentedPrompt = """
+                基于以下知识库内容回答问题。如果内容中没有相关信息，请明确说明"知识库中未找到相关内容"。
+
+                知识库内容:
+                %s
+
+                问题: %s
+
+                请给出准确、简洁的回答，并在末尾标注引用的来源编号 [1], [2] 等。
+                """.formatted(context, question);
+
+        String answer;
+        try {
+            answer = chatClient.prompt()
+                    .user(augmentedPrompt)
+                    .call()
+                    .content();
+        } catch (Exception e) {
+            log.error("LLM call failed for space '{}': {}", spaceId, e.getMessage());
+            answer = "回答生成失败，请稍后重试。";
+        }
+
+        if (answer == null || answer.isBlank()) {
+            answer = "AI 返回了空回复，请重试。";
+        }
+
+        double topScore = scoreSimilarity(chunks.get(0).getContent(), question);
+        String confidence = computeConfidence(topScore, chunks.size());
+
+        String messageId = UUID.randomUUID().toString();
+        List<Citation> citations = new ArrayList<>();
+        for (int i = 0; i < chunks.size(); i++) {
+            Chunk c = chunks.get(i);
+            double score = scoreSimilarity(c.getContent(), question);
+            Citation cit = new Citation(messageId, spaceId, c.getDocumentId(), c.getVersionId(), c.getId(), score);
+            citations.add(citationRepo.save(cit));
+        }
+
+        return new QaResult(messageId, answer, citations, confidence, topScore, conversationId);
+    }
+
+    @Transactional
+    public Feedback submitFeedback(String messageId, String spaceId, String thumbs, String reason, String correction) {
+        if (!"up".equals(thumbs) && !"down".equals(thumbs)) {
+            throw new IllegalArgumentException("thumbs 必须为 'up' 或 'down'");
+        }
+        Feedback fb = new Feedback(messageId, spaceId, thumbs, reason, correction);
+        return feedbackRepo.save(fb);
+    }
+
+    public List<Feedback> getFeedback(String spaceId) {
+        return feedbackRepo.findBySpaceId(spaceId);
+    }
+
+    public List<Citation> getCitations(String messageId) {
+        return citationRepo.findByMessageId(messageId);
+    }
+
+    private String buildContext(List<Chunk> chunks) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < chunks.size(); i++) {
+            Chunk c = chunks.get(i);
+            sb.append("[").append(i + 1).append("] ");
+            if (c.getHeading() != null) sb.append(c.getHeading()).append(" > ");
+            sb.append(c.getContent());
+            sb.append("\n\n");
+        }
+        return sb.toString();
+    }
+
+    private String computeConfidence(double topScore, int chunkCount) {
+        if (topScore >= HIGH_THRESHOLD && chunkCount >= 2) return "high";
+        if (topScore >= MEDIUM_THRESHOLD) return "medium";
+        return "low";
+    }
+
+    private double scoreSimilarity(String text, String query) {
+        String textLower = text.toLowerCase();
+        String queryLower = query.toLowerCase();
+        Set<String> textTokens = tokenize(textLower);
+        Set<String> queryTokens = tokenize(queryLower);
+        if (queryTokens.isEmpty() || textTokens.isEmpty()) return 0;
+        long matches = queryTokens.stream().filter(textTokens::contains).count();
+        return (double) matches / Math.sqrt(textTokens.size() * queryTokens.size());
+    }
+
+    private Set<String> tokenize(String text) {
+        Set<String> tokens = new HashSet<>();
+        for (String word : text.split("\\s+")) {
+            if (word.isBlank()) continue;
+            for (char c : word.toCharArray()) {
+                if (isCjk(c)) {
+                    tokens.add(String.valueOf(c));
+                } else if (Character.isLetterOrDigit(c)) {
+                    tokens.add(String.valueOf(Character.toLowerCase(c)));
+                }
+            }
+        }
+        return tokens;
+    }
+
+    private boolean isCjk(char c) {
+        return (c >= '\u4E00' && c <= '\u9FFF') || (c >= '\u3400' && c <= '\u4DBF');
+    }
+
+    public record QaResult(
+            String messageId,
+            String answer,
+            List<Citation> citations,
+            String confidence,
+            double topScore,
+            String conversationId
+    ) {}
+}

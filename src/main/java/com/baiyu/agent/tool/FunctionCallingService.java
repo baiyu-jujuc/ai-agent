@@ -14,11 +14,11 @@ import java.util.List;
 public class FunctionCallingService {
 
     private final ChatClient chatClient;
-    private final List<ToolComponent> toolComponents;
+    private final ToolRegistry toolRegistry;
 
-    public FunctionCallingService(ChatClient chatClient, List<ToolComponent> toolComponents) {
+    public FunctionCallingService(ChatClient chatClient, ToolRegistry toolRegistry) {
         this.chatClient = chatClient;
-        this.toolComponents = toolComponents;
+        this.toolRegistry = toolRegistry;
     }
 
     public String executeWithTools(String userInput, String model, List<Message> history) {
@@ -33,7 +33,7 @@ public class FunctionCallingService {
 
         var spec = chatClient.prompt()
                 .messages(messages)
-                .tools(toolComponents.toArray());
+                .tools((Object[]) toolRegistry.components());
 
         if (model != null && !model.isEmpty()) {
             spec.options(ChatOptions.builder().model(model).build());

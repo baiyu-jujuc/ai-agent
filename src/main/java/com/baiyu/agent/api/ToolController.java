@@ -1,59 +1,35 @@
 package com.baiyu.agent.api;
 
-import com.baiyu.agent.tool.ToolComponent;
-import org.springframework.ai.tool.annotation.Tool;
+import com.baiyu.agent.tool.ToolRegistry;
 import org.springframework.web.bind.annotation.*;
 
-import java.lang.reflect.Method;
 import java.util.*;
 
 @RestController
 @RequestMapping("/api/tools")
 public class ToolController {
 
-    private final List<ToolComponent> toolComponents;
+    private final ToolRegistry toolRegistry;
 
-    public ToolController(List<ToolComponent> toolComponents) {
-        this.toolComponents = toolComponents;
+    public ToolController(ToolRegistry toolRegistry) {
+        this.toolRegistry = toolRegistry;
     }
 
     @GetMapping
     public List<Map<String, String>> listTools() {
-        List<Map<String, String>> result = new ArrayList<>();
-        for (ToolComponent tool : toolComponents) {
-            for (Method method : tool.getClass().getDeclaredMethods()) {
-                Tool annotation = method.getAnnotation(Tool.class);
-                if (annotation != null) {
-                    String name = annotation.name().isEmpty() ? method.getName() : annotation.name();
-                    result.add(Map.of("name", name, "description", annotation.description()));
-                }
-            }
-        }
-        return result;
+        return toolRegistry.listTools();
     }
 
     @PostMapping("/{toolName}")
     public Map<String, String> executeTool(@PathVariable String toolName,
                                            @RequestBody Map<String, String> request) {
-        for (ToolComponent tool : toolComponents) {
-            for (Method method : tool.getClass().getDeclaredMethods()) {
-                Tool annotation = method.getAnnotation(Tool.class);
-                if (annotation != null) {
-                    String name = annotation.name().isEmpty() ? method.getName() : annotation.name();
-                    if (name.equals(toolName)) {
-                        try {
-                            String input = request.getOrDefault("input", "");
-                            Object result = method.invoke(tool, input);
-                            return Map.of("tool", toolName, "result", result != null ? result.toString() : "empty result");
-                        } catch (Exception e) {
-                            Throwable cause = e.getCause();
-                            String errMsg = cause != null ? cause.getMessage() : e.getMessage();
-                            return Map.of("tool", toolName, "result", "Execution error: " + (errMsg != null ? errMsg : "unknown"));
-                        }
-                    }
-                }
-            }
+        String input = request.getOrDefault("input", "");
+        try {
+            return toolRegistry.execute(toolName, input)
+                    .map(result -> Map.of("tool", toolName, "result", result))
+                    .orElseGet(() -> Map.of("tool", toolName, "result", "Tool not found: " + toolName));
+        } catch (Exception e) {
+            return Map.of("tool", toolName, "result", "Execution failed, please try again.");
         }
-        return Map.of("tool", toolName, "result", "Tool not found: " + toolName);
     }
 }
