@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
+import org.springframework.ai.vectorstore.filter.Filter;
 
 import java.util.List;
 import java.util.Map;
@@ -136,5 +137,138 @@ class InMemoryVectorStoreTest {
                         .similarityThreshold(0.0)
                         .build());
         assertEquals(3, results.size(), "Zero threshold should return all results");
+    }
+
+    // T8: filter expression support
+    @Test
+    void filterBySpaceIdEq() {
+        store.add(List.of(
+                new Document("Java guide", Map.of("space_id", "space-1", "document_id", "doc-1")),
+                new Document("Python guide", Map.of("space_id", "space-2", "document_id", "doc-2"))
+        ));
+        Filter.Expression filter = new Filter.Expression(
+                Filter.ExpressionType.EQ,
+                new Filter.Key("space_id"),
+                new Filter.Value("space-1"));
+
+        List<Document> results = store.similaritySearch(
+                SearchRequest.builder().query("guide").topK(10).filterExpression(filter).build());
+
+        assertEquals(1, results.size());
+        assertEquals("space-1", results.get(0).getMetadata().get("space_id"));
+    }
+
+    @Test
+    void filterBySpaceIdNoMatch() {
+        store.add(List.of(
+                new Document("Java guide", Map.of("space_id", "space-1"))
+        ));
+        Filter.Expression filter = new Filter.Expression(
+                Filter.ExpressionType.EQ,
+                new Filter.Key("space_id"),
+                new Filter.Value("space-999"));
+
+        List<Document> results = store.similaritySearch(
+                SearchRequest.builder().query("guide").topK(10).filterExpression(filter).build());
+
+        assertTrue(results.isEmpty());
+    }
+
+    @Test
+    void filterAndExpression() {
+        store.add(List.of(
+                new Document("doc a", Map.of("space_id", "space-1", "version_id", "v1")),
+                new Document("doc b", Map.of("space_id", "space-1", "version_id", "v2")),
+                new Document("doc c", Map.of("space_id", "space-2", "version_id", "v1"))
+        ));
+        Filter.Expression spaceFilter = new Filter.Expression(
+                Filter.ExpressionType.EQ,
+                new Filter.Key("space_id"),
+                new Filter.Value("space-1"));
+        Filter.Expression versionFilter = new Filter.Expression(
+                Filter.ExpressionType.EQ,
+                new Filter.Key("version_id"),
+                new Filter.Value("v1"));
+        Filter.Expression andFilter = new Filter.Expression(
+                Filter.ExpressionType.AND,
+                spaceFilter,
+                versionFilter);
+
+        List<Document> results = store.similaritySearch(
+                SearchRequest.builder().query("doc").topK(10).filterExpression(andFilter).build());
+
+        assertEquals(1, results.size());
+        assertEquals("space-1", results.get(0).getMetadata().get("space_id"));
+        assertEquals("v1", results.get(0).getMetadata().get("version_id"));
+    }
+
+    @Test
+    void filterOrExpression() {
+        store.add(List.of(
+                new Document("doc a", Map.of("space_id", "space-1")),
+                new Document("doc b", Map.of("space_id", "space-2")),
+                new Document("doc c", Map.of("space_id", "space-3"))
+        ));
+        Filter.Expression f1 = new Filter.Expression(
+                Filter.ExpressionType.EQ, new Filter.Key("space_id"), new Filter.Value("space-1"));
+        Filter.Expression f2 = new Filter.Expression(
+                Filter.ExpressionType.EQ, new Filter.Key("space_id"), new Filter.Value("space-2"));
+        Filter.Expression orFilter = new Filter.Expression(Filter.ExpressionType.OR, f1, f2);
+
+        List<Document> results = store.similaritySearch(
+                SearchRequest.builder().query("doc").topK(10).filterExpression(orFilter).build());
+
+        assertEquals(2, results.size());
+    }
+
+    @Test
+    void filterNotExpression() {
+        store.add(List.of(
+                new Document("doc a", Map.of("space_id", "space-1")),
+                new Document("doc b", Map.of("space_id", "space-2"))
+        ));
+        Filter.Expression eq = new Filter.Expression(
+                Filter.ExpressionType.EQ, new Filter.Key("space_id"), new Filter.Value("space-1"));
+        Filter.Expression notFilter = new Filter.Expression(Filter.ExpressionType.NOT, eq, null);
+
+        List<Document> results = store.similaritySearch(
+                SearchRequest.builder().query("doc").topK(10).filterExpression(notFilter).build());
+
+        assertEquals(1, results.size());
+        assertEquals("space-2", results.get(0).getMetadata().get("space_id"));
+    }
+
+    @Test
+    void deleteByFilterExpression() {
+        store.add(List.of(
+                new Document("to delete", Map.of("version_id", "v1")),
+                new Document("keep this", Map.of("version_id", "v2"))
+        ));
+        Filter.Expression filter = new Filter.Expression(
+                Filter.ExpressionType.EQ,
+                new Filter.Key("version_id"),
+                new Filter.Value("v1"));
+
+        store.delete(filter);
+
+        List<Document> results = store.similaritySearch(
+                SearchRequest.builder().query("delete").topK(10).build());
+        assertTrue(results.stream().noneMatch(d -> d.getText().contains("to delete")));
+
+        List<Document> allResults = store.similaritySearch(
+                SearchRequest.builder().query("keep").topK(10).build());
+        assertEquals(1, allResults.size());
+        assertEquals("v2", allResults.get(0).getMetadata().get("version_id"));
+    }
+
+    @Test
+    void noFilterReturnsAll() {
+        store.add(List.of(
+                new Document("doc a", Map.of("space_id", "space-1")),
+                new Document("doc b", Map.of("space_id", "space-2"))
+        ));
+        List<Document> results = store.similaritySearch(
+                SearchRequest.builder().query("doc").topK(10).build());
+        assertEquals(2, results.size());
     }
 }

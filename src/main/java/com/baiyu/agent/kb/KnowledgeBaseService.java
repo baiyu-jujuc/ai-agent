@@ -5,7 +5,9 @@ import com.baiyu.agent.kb.repository.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.reader.pdf.PagePdfDocumentReader;
+import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.ai.vectorstore.filter.Filter;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -162,6 +164,30 @@ public class KnowledgeBaseService {
     }
 
     public List<Chunk> searchChunks(String spaceId, String query, int topK) {
+        try {
+            Filter.Expression filterExpr = new Filter.Expression(
+                    Filter.ExpressionType.EQ,
+                    new Filter.Key("space_id"),
+                    new Filter.Value(spaceId));
+
+            SearchRequest request = SearchRequest.builder()
+                    .query(query)
+                    .topK(topK)
+                    .filterExpression(filterExpr)
+                    .build();
+
+            List<org.springframework.ai.document.Document> results = vectorStore.similaritySearch(request);
+            return results.stream()
+                    .map(doc -> chunkFromDocument(doc))
+                    .filter(Objects::nonNull)
+                    .toList();
+        } catch (Exception e) {
+            log.warn("Vector store search failed, falling back to DB search: {}", e.getMessage());
+            return searchChunksFromDb(spaceId, query, topK);
+        }
+    }
+
+    private List<Chunk> searchChunksFromDb(String spaceId, String query, int topK) {
         List<Chunk> spaceChunks = chunkRepo.findBySpaceIdAndEnabledTrue(spaceId);
         String queryLower = query.toLowerCase();
         return spaceChunks.stream()
@@ -171,6 +197,31 @@ public class KnowledgeBaseService {
                 .limit(topK)
                 .map(Map.Entry::getKey)
                 .toList();
+    }
+
+    private Chunk chunkFromDocument(org.springframework.ai.document.Document doc) {
+        Map<String, Object> meta = doc.getMetadata();
+        String chunkId = meta.get("chunk_id") != null ? String.valueOf(meta.get("chunk_id")) : null;
+        String versionId = meta.get("version_id") != null ? String.valueOf(meta.get("version_id")) : null;
+        String spaceId = meta.get("space_id") != null ? String.valueOf(meta.get("space_id")) : null;
+        String documentId = meta.get("document_id") != null ? String.valueOf(meta.get("document_id")) : null;
+        Object headingObj = meta.get("heading");
+        String heading = headingObj != null ? String.valueOf(headingObj) : null;
+        Object chunkIndexObj = meta.get("chunk_index");
+        int chunkIndex = 0;
+        if (chunkIndexObj instanceof Number n) {
+            chunkIndex = n.intValue();
+        }
+
+        if (versionId == null || spaceId == null || documentId == null) {
+            return null;
+        }
+
+        Chunk chunk = new Chunk(versionId, spaceId, documentId, doc.getText(), chunkIndex);
+        if (chunkId != null) chunk.setId(chunkId);
+        if (heading != null) chunk.setHeading(heading);
+        chunk.setEnabled(true);
+        return chunk;
     }
 
     private String extractText(MultipartFile file, String filename) throws IOException {
@@ -241,10 +292,12 @@ public class KnowledgeBaseService {
             List<org.springframework.ai.document.Document> aiDocs = new ArrayList<>();
             for (Chunk c : chunks) {
                 Map<String, Object> meta = new HashMap<>();
-                meta.put("spaceId", spaceId);
-                meta.put("documentId", docId);
-                meta.put("versionId", versionId);
-                if (c.getId() != null) meta.put("chunkId", c.getId());
+                meta.put("space_id", spaceId);
+                meta.put("document_id", docId);
+                meta.put("version_id", versionId);
+                meta.put("chunk_id", c.getId() != null ? c.getId() : "");
+                meta.put("chunk_index", c.getChunkIndex());
+                if (c.getHeading() != null) meta.put("heading", c.getHeading());
                 aiDocs.add(new org.springframework.ai.document.Document(c.getContent(), meta));
             }
             vectorStore.add(aiDocs);
@@ -259,6 +312,17 @@ public class KnowledgeBaseService {
             c.setEnabled(false);
         }
         chunkRepo.saveAll(chunks);
+
+        // Delete vectors for this version from vector store
+        try {
+            Filter.Expression filterExpr = new Filter.Expression(
+                    Filter.ExpressionType.EQ,
+                    new Filter.Key("version_id"),
+                    new Filter.Value(versionId));
+            vectorStore.delete(filterExpr);
+        } catch (Exception e) {
+            log.warn("Failed to delete version vectors from vector store: {}", e.getMessage());
+        }
     }
 
     private void enableChunksForVersion(String versionId) {
@@ -267,6 +331,12 @@ public class KnowledgeBaseService {
             c.setEnabled(true);
         }
         chunkRepo.saveAll(chunks);
+
+        // Re-add vectors for this version to vector store
+        if (!chunks.isEmpty()) {
+            Chunk first = chunks.get(0);
+            indexToVectorStore(chunks, first.getSpaceId(), first.getDocumentId(), versionId);
+        }
     }
 
     private String sha256(byte[] data) {

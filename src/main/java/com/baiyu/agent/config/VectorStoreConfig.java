@@ -1,9 +1,13 @@
 package com.baiyu.agent.config;
 
+import io.qdrant.client.QdrantClient;
+import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.Filter;
+import org.springframework.ai.vectorstore.qdrant.QdrantVectorStore;
 import org.springframework.ai.document.Document;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -21,6 +25,17 @@ public class VectorStoreConfig {
     @ConditionalOnProperty(name = "agent.storage.vector-store", havingValue = "memory", matchIfMissing = true)
     public VectorStore inMemoryVectorStore() {
         return new InMemoryVectorStore();
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "agent.storage.vector-store", havingValue = "qdrant")
+    public VectorStore qdrantVectorStore(
+            EmbeddingModel embeddingModel,
+            QdrantClient qdrantClient,
+            @Value("${spring.ai.vectorstore.qdrant.collection-name:kb_chunks}") String collectionName) {
+        return QdrantVectorStore.builder(qdrantClient, embeddingModel)
+                .collectionName(collectionName)
+                .build();
     }
 
     public static class InMemoryVectorStore implements VectorStore {
@@ -43,7 +58,14 @@ public class VectorStoreConfig {
 
         @Override
         public void delete(Filter.Expression filterExpression) {
-            throw new UnsupportedOperationException("Filter-based delete not supported in InMemoryVectorStore");
+            if (filterExpression == null) return;
+            List<String> toDelete = new ArrayList<>();
+            for (Map.Entry<String, Document> entry : store.entrySet()) {
+                if (matchesFilter(entry.getValue(), filterExpression)) {
+                    toDelete.add(entry.getKey());
+                }
+            }
+            toDelete.forEach(store::remove);
         }
 
         @Override
@@ -57,7 +79,10 @@ public class VectorStoreConfig {
             String query = request.getQuery().toLowerCase();
             double threshold = request.getSimilarityThreshold();
             int topK = request.getTopK();
+            Filter.Expression filterExpression = request.getFilterExpression();
+
             return store.values().stream()
+                    .filter(doc -> filterExpression == null || matchesFilter(doc, filterExpression))
                     .map(doc -> {
                         double score = cosineSim(doc.getText().toLowerCase(), query);
                         return Map.entry(doc, score);
@@ -67,6 +92,59 @@ public class VectorStoreConfig {
                     .limit(topK)
                     .map(Map.Entry::getKey)
                     .toList();
+        }
+
+        private boolean matchesFilter(Document doc, Filter.Expression expression) {
+            if (expression == null) return true;
+            return evaluateExpression(doc.getMetadata(), expression);
+        }
+
+        private boolean evaluateExpression(Map<String, Object> metadata, Filter.Expression expression) {
+            Filter.ExpressionType type = expression.type();
+            return switch (type) {
+                case EQ -> evaluateEq(metadata, expression);
+                case NE -> !evaluateEq(metadata, expression);
+                case AND -> evaluateAnd(metadata, expression);
+                case OR -> evaluateOr(metadata, expression);
+                case NOT -> evaluateNot(metadata, expression);
+                case GT, GTE, LT, LTE, IN, NIN ->
+                    // Unsupported comparison ops: default to true (don't filter out)
+                    true;
+            };
+        }
+
+        private boolean evaluateEq(Map<String, Object> metadata, Filter.Expression expression) {
+            if (!(expression.left() instanceof Filter.Key key)) return true;
+            if (!(expression.right() instanceof Filter.Value value)) return true;
+            Object metaValue = metadata.get(key.key());
+            if (metaValue == null) return false;
+            return String.valueOf(metaValue).equals(String.valueOf(value.value()));
+        }
+
+        private boolean evaluateAnd(Map<String, Object> metadata, Filter.Expression expression) {
+            boolean leftResult = evaluateOperand(metadata, expression.left());
+            if (!leftResult) return false;
+            return evaluateOperand(metadata, expression.right());
+        }
+
+        private boolean evaluateOr(Map<String, Object> metadata, Filter.Expression expression) {
+            boolean leftResult = evaluateOperand(metadata, expression.left());
+            if (leftResult) return true;
+            return evaluateOperand(metadata, expression.right());
+        }
+
+        private boolean evaluateNot(Map<String, Object> metadata, Filter.Expression expression) {
+            return !evaluateOperand(metadata, expression.left());
+        }
+
+        private boolean evaluateOperand(Map<String, Object> metadata, Filter.Operand operand) {
+            if (operand instanceof Filter.Expression expr) {
+                return evaluateExpression(metadata, expr);
+            }
+            if (operand instanceof Filter.Group group) {
+                return evaluateExpression(metadata, group.content());
+            }
+            return true;
         }
 
         private double cosineSim(String text, String query) {

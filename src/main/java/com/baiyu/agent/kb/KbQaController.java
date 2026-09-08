@@ -43,7 +43,7 @@ public class KbQaController {
             throw new IllegalArgumentException("question 不能为空");
         }
         String conversationId = request.getOrDefault("conversationId", spaceId + ":" + userId);
-        KbQaService.QaResult result = qaService.ask(spaceId, question, conversationId);
+        KbQaService.QaResult result = qaService.ask(spaceId, question, conversationId, userId);
 
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("messageId", result.messageId());
@@ -124,6 +124,28 @@ public class KbQaController {
                     m.put("chunkId", c.getChunkId());
                     m.put("score", c.getScore());
                     return m;
+                })
+                .toList();
+    }
+
+    @GetMapping("/spaces/{spaceId}/conversations/{conversationId}/messages")
+    public List<Map<String, Object>> getMessages(@PathVariable String spaceId,
+                                                  @PathVariable String conversationId) {
+        String userId = currentUserId();
+        if (!permissionService.canRead(spaceId, userId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权访问该知识空间");
+        }
+        return qaService.getMessages(conversationId).stream()
+                .map(m -> {
+                    Map<String, Object> msg = new LinkedHashMap<>();
+                    msg.put("id", m.getId());
+                    msg.put("messageId", m.getMessageId());
+                    msg.put("role", m.getRole());
+                    msg.put("content", m.getContent());
+                    if (m.getConfidence() != null) msg.put("confidence", m.getConfidence());
+                    if (m.getTopScore() != null) msg.put("topScore", m.getTopScore());
+                    msg.put("createdAt", m.getCreatedAt() != null ? m.getCreatedAt().toString() : null);
+                    return msg;
                 })
                 .toList();
     }

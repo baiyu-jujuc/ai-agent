@@ -10,8 +10,10 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.*;
 
@@ -132,17 +134,28 @@ class KnowledgeBaseServiceTest {
 
     @Test
     void searchChunksReturnsResults() {
-        Chunk c1 = new Chunk("ver-001", "space-001", "doc-001", "Java virtual threads guide", 0);
-        ReflectionTestUtils.setField(c1, "id", "chunk-001");
-        Chunk c2 = new Chunk("ver-001", "space-001", "doc-002", "Python data science", 0);
-        ReflectionTestUtils.setField(c2, "id", "chunk-002");
+        org.springframework.ai.document.Document d1 = new org.springframework.ai.document.Document("Java virtual threads guide", Map.of(
+                "space_id", "space-001",
+                "document_id", "doc-001",
+                "version_id", "ver-001",
+                "chunk_id", "chunk-001",
+                "chunk_index", 0
+        ));
+        org.springframework.ai.document.Document d2 = new org.springframework.ai.document.Document("Python data science", Map.of(
+                "space_id", "space-001",
+                "document_id", "doc-002",
+                "version_id", "ver-001",
+                "chunk_id", "chunk-002",
+                "chunk_index", 0
+        ));
 
-        when(chunkRepo.findBySpaceIdAndEnabledTrue("space-001"))
-                .thenReturn(List.of(c1, c2));
+        when(vectorStore.similaritySearch(any(org.springframework.ai.vectorstore.SearchRequest.class)))
+                .thenReturn(List.of(d1, d2));
 
         List<Chunk> results = kbService.searchChunks("space-001", "Java threads", 5);
         assertFalse(results.isEmpty());
         assertTrue(results.get(0).getContent().contains("Java"));
+        assertEquals("chunk-001", results.get(0).getId());
     }
 
     @Test

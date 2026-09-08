@@ -21,32 +21,48 @@ public class KbQaService {
     private final KnowledgeBaseService kbService;
     private final CitationRepository citationRepo;
     private final FeedbackRepository feedbackRepo;
+    private final KbMessageRepository messageRepo;
     private final ChatClient chatClient;
 
     public KbQaService(
             KnowledgeBaseService kbService,
             CitationRepository citationRepo,
             FeedbackRepository feedbackRepo,
+            KbMessageRepository messageRepo,
             ChatClient chatClient) {
         this.kbService = kbService;
         this.citationRepo = citationRepo;
         this.feedbackRepo = feedbackRepo;
+        this.messageRepo = messageRepo;
         this.chatClient = chatClient;
     }
 
     @Transactional
-    public QaResult ask(String spaceId, String question, String conversationId) {
+    public QaResult ask(String spaceId, String question, String conversationId, String userId) {
         if (question == null || question.isBlank()) {
             throw new IllegalArgumentException("question 不能为空");
         }
         if (spaceId == null || spaceId.isBlank()) {
             throw new IllegalArgumentException("spaceId 不能为空");
         }
+        if (userId == null || userId.isBlank()) {
+            throw new IllegalArgumentException("userId 不能为空");
+        }
+
+        // Save user message before retrieval
+        String userMessageId = UUID.randomUUID().toString();
+        KbMessage userMsg = new KbMessage(spaceId, conversationId, userMessageId, userId,
+                "user", question, null, null);
+        messageRepo.save(userMsg);
 
         List<Chunk> chunks = kbService.searchChunks(spaceId, question, SEARCH_TOP_K);
 
         if (chunks.isEmpty()) {
             String msgId = UUID.randomUUID().toString();
+            KbMessage assistantMsg = new KbMessage(spaceId, conversationId, msgId, userId,
+                    "assistant", "抱歉，当前知识空间中没有找到与您问题相关的内容。请尝试上传相关文档或调整问题措辞。",
+                    "low", 0.0);
+            messageRepo.save(assistantMsg);
             return new QaResult(
                     msgId,
                     "抱歉，当前知识空间中没有找到与您问题相关的内容。请尝试上传相关文档或调整问题措辞。",
@@ -96,7 +112,16 @@ public class KbQaService {
             citations.add(citationRepo.save(cit));
         }
 
+        // Save assistant message after generation
+        KbMessage assistantMsg = new KbMessage(spaceId, conversationId, messageId, userId,
+                "assistant", answer, confidence, topScore);
+        messageRepo.save(assistantMsg);
+
         return new QaResult(messageId, answer, citations, confidence, topScore, conversationId);
+    }
+
+    public List<KbMessage> getMessages(String conversationId) {
+        return messageRepo.findByConversationIdOrderByCreatedAtAsc(conversationId);
     }
 
     @Transactional
