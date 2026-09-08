@@ -34,17 +34,18 @@
 | 文档管理 | `Document` + `DocumentVersion`，记录上传状态、内容哈希、版本号、活跃版本 | ✅ |
 | 分块索引 | 500 字符 / 100 重叠分块，中文与英文 token 化检索 | ✅ |
 | 知识问答 | `/api/kb/spaces/{spaceId}/ask`，返回 answer、citations、confidence、topScore | ✅ |
-| 引用溯源 | `Citation` 记录 message/document/version/chunk 与相似度 | ✅ 基础版，前端展示待完善 |
-| 用户反馈 | `Feedback` 支持 up/down、原因与人工纠正文本 | ✅ 后端已具备，前端待完善 |
-| 权限建模 | `SpaceMember` + `PermissionRule` + `PermissionService`，成员管理 API 已具备 | ✅ 模型已具备，接口强制执行待完善 |
+| 引用溯源 | `Citation` 记录 message/document/version/chunk 与相似度，返回 `documentName`/`versionNo`/`content` | ✅ |
+| 用户反馈 | `Feedback` 支持 up/down、原因与人工纠正文本，前端点赞点踩 UI | ✅ |
+| 权限建模 | `SpaceMember` + `PermissionRule` + `PermissionService`，成员管理 API，所有 KB 接口强制 `canRead`/`canWrite`/`canAdmin` | ✅ |
 | 多 Agent / 工具 | Coordinator / Code / Research / Data / ReAct，以及 Spring AI `@Tool` 工具注册表 | ✅ |
 | 记忆 | 会话消息记录，内存与 Redis 两种实现，支持 token / 条数 / 会话淘汰 | ✅ |
 | 流式输出 | SSE 流式聊天与工具/Agent 单事件模式 | ✅ |
-| 用户鉴权 | JWT + Spring Security，注册/登录/获取当前用户 | 🔄 规划中 |
-| 文档上传 UI | 拖拽上传、解析状态展示、版本列表、回滚 | 🔄 规划中 |
-| 引用与反馈 UI | 引用编号插入正文、点击展开原文、置信度 badge、点赞点踩 | 🔄 规划中 |
-| 页面模型 Key | `X-Model-API-Key` 后端支持，per-request 安全注入 | 🔄 规划中 |
-| Qdrant 生产模式 | 真实 Embedding + VectorStore 的 RAG 链路 | 🔄 规划中 |
+| 用户鉴权 | JWT + Spring Security，注册/登录/获取当前用户，BCrypt 密码散列 | ✅ |
+| 文档上传 UI | 页面拖拽/选择上传、解析状态展示、版本列表、管理员回滚 | ✅ |
+| 引用与反馈 UI | 引用编号插入正文、点击展开原文片段、置信度 badge、点赞点踩 | ✅ |
+| 页面模型 Key | `X-Model-API-Key` 后端支持，`ChatModelFactory` per-request 安全注入，默认关闭 | ✅ |
+| Qdrant 生产模式 | 真实 Embedding + VectorStore 的 RAG 链路，版本化向量索引同步 | ✅ |
+| 对话上下文隔离 | `conversationId` 隔离到用户 + 空间 + 会话，`KbMessage` 持久化 | ✅ |
 
 ---
 
@@ -157,9 +158,38 @@ Compose 默认保持 memory 模式可开箱运行，同时提供 Qdrant、Redis 
 
 - 模型 Key 只存在服务端环境变量中，不出现在页面、日志或 API 响应中。
 - 前端设置弹窗中的"模型 API Key"字段为可选功能，仅在服务端开启 `allow-client-model-key` 时生效（默认关闭）。
+- 开启后，前端通过 `X-Model-API-Key` 请求头传递 Key，服务端通过 `ChatModelFactory` 为当前请求创建独立 `ChatModel` 实例，请求结束后不保留。
+- Key 不进入日志、数据库、URL 或异常响应。
 - `.env` 已被 `.gitignore` 排除，不会上传到 GitHub。
 
 > **首次使用：** 打开页面后点击右上角齿轮图标，在"平台访问 Key"中填入 `dev-key-change-in-production`，保存即可。Key 存在浏览器 `localStorage`，刷新不丢失。
+
+### 5.4 用户鉴权（JWT）
+
+本平台使用 JWT + Spring Security 进行用户身份认证：
+
+- **注册/登录**：`POST /api/auth/register`、`POST /api/auth/login`，密码使用 BCrypt 散列存储。
+- **JWT Token**：登录后返回 JWT，前端存储在 `localStorage`，后续请求通过 `Authorization: Bearer <token>` 传递。
+- **权限强制执行**：所有 KB API 通过 `PermissionService` 检查 `canRead`/`canWrite`/`canAdmin`。
+- **空间隔离**：`listSpaces` 只返回当前用户可访问的空间；非成员访问私有空间返回 403。
+
+### 5.5 Qdrant 生产模式
+
+默认使用内存向量存储（零依赖开发模式）。切换到 Qdrant 生产模式：
+
+```bash
+export VECTOR_STORE_TYPE=qdrant
+export EMBEDDING_API_KEY=your-embedding-key
+export EMBEDDING_BASE_URL=https://api.openai.com
+export EMBEDDING_MODEL=text-embedding-3-small
+export QDRANT_HOST=localhost
+export QDRANT_PORT=6333
+./mvnw spring-boot:run
+```
+
+- 文档上传/回滚时，向量按版本删除和重建，旧版本不污染检索结果。
+- 检索结果携带 `space_id` 过滤条件，确保空间隔离。
+- 内存模式保留作为测试和零依赖开发模式。
 
 ---
 
@@ -169,7 +199,10 @@ Compose 默认保持 memory 模式可开箱运行，同时提供 Qdrant、Redis 
 
 ```text
 X-API-Key: dev-key-change-in-production
+Authorization: Bearer <jwt-token>
 ```
+
+> JWT Token 通过注册/登录获取。前端自动在所有请求中携带这两个头。
 
 ### 6.1 创建知识空间
 
@@ -207,18 +240,23 @@ curl -X POST http://localhost:8080/api/kb/spaces/{spaceId}/ask \
   "answer": "运行 `./mvnw spring-boot:run` [1]",
   "confidence": "high",
   "topScore": 0.86,
+  "conversationId": "conv-xxx",
   "citations": [
     {
+      "citationId": "uuid",
       "documentId": "uuid",
+      "documentName": "README.md",
       "versionId": "uuid",
+      "versionNo": 1,
       "chunkId": "uuid",
+      "content": "引用片段原文...",
       "score": 0.86
     }
   ]
 }
 ```
 
-> **规划中：** citation 将补全 `documentName`、`versionNo`、`content` 字段，前端展示为编号引用 + 点击展开原文。
+citation 包含文件名、版本号和原文片段，前端以编号 `[1]` 形式插入回答正文，点击可展开原文。
 
 ### 6.4 文档版本与回滚
 
@@ -292,12 +330,13 @@ curl -X POST http://localhost:8080/api/chat/orchestrate \
 ./mvnw clean verify --no-transfer-progress
 ```
 
-当前仓库包含约 100 个自动化测试，覆盖：
+当前仓库包含 119 个自动化测试，覆盖：
 
 - ChatController 参数与状态码
-- KB 服务与权限服务
-- 内存向量检索（含 similarityThreshold 过滤）
-- 安全鉴权（API Key、公开 GET、错误 Key）
+- KB 服务、KbQaService 问答与消息持久化
+- 权限服务（canRead/canWrite/canAdmin）
+- 内存向量检索（含 similarityThreshold 过滤、Filter 表达式）
+- 安全鉴权（API Key、JWT、公开 GET、错误 Key）
 - 编排策略（sequential / parallel + TaskTrace）
 - RAG 与内置工具
 
@@ -325,22 +364,26 @@ curl -X POST http://localhost:8080/api/chat/orchestrate \
 - ✅ 浅色 DeepSeek 风格中文 Web UI
 - ✅ 模型注册、SSE、工具调用、多 Agent 编排（含执行轨迹）
 - ✅ GitHub Actions CI、Dockerfile、Compose、Maven Wrapper
-- ✅ 100 个自动化测试（不依赖外网 LLM）
+- ✅ 119 个自动化测试（不依赖外网 LLM）
 - ✅ 文档分块（中文单字分词 + 英文 token）、PDF/Markdown 读取
-- ✅ 文档版本管理与回滚
+- ✅ 文档版本管理与回滚（含向量索引同步）
 - ✅ 统一异常处理、Actuator 最小暴露
+- ✅ JWT + Spring Security 用户鉴权（注册/登录/BCrypt）
+- ✅ 权限强制执行（canRead/canWrite/canAdmin 接入所有 KB API）
+- ✅ 页面文档上传 UI（拖拽/选择上传、解析状态、版本列表、回滚）
+- ✅ 知识空间问答主链路打通（选空间 → /api/kb/spaces/{id}/ask）
+- ✅ 引用与反馈 UI（编号引用、点击展开原文、置信度 badge、点赞点踩）
+- ✅ 对话上下文隔离（conversationId 隔离到用户 + 空间 + 会话）
+- ✅ 消息持久化（KbMessage 实体，按会话查询历史）
+- ✅ 页面模型 Key 后端支持（ChatModelFactory + allow-client-model-key）
+- ✅ Qdrant 生产模式（版本化向量索引、空间过滤、Embedding 集成）
 
-### 进行中 / 规划
+### 规划
 
-- 🔄 **用户鉴权与权限：** JWT + Spring Security，注册/登录/获取当前用户；权限强制执行到所有 KB API
-- 🔄 **页面文档上传：** 拖拽上传、解析状态展示、版本列表、管理员回滚
-- 🔄 **知识空间问答主链路打通：** 顶部选择空间后提问走 `/api/kb/spaces/{spaceId}/ask`（当前仍走普通聊天接口）
-- 🔄 **引用与反馈 UI：** 引用编号插入正文、点击展开原文片段、置信度 badge、点赞点踩
-- 🔄 **页面模型 Key 后端支持：** `allow-client-model-key` 开关 + per-request 安全注入
-- 🔄 **Qdrant 生产模式：** 真实 Embedding + 版本化向量索引同步
-- 🔄 **对话上下文隔离：** conversationId 隔离到用户 + 空间 + 会话
-- 🔄 **检索相关性优化：** rerank、引用片段原文回显
-- 🔄 **生产数据库迁移脚本与审计日志**
+- 🔜 检索相关性优化：rerank、引用片段原文回显增强
+- 🔜 生产数据库迁移脚本与审计日志
+- 🔜 文档级权限规则（deny 规则在检索前过滤）
+- 🔜 移动端适配优化
 
 详细改造方向见 [docs/trae-phase2-handoff.md](docs/trae-phase2-handoff.md)。
 
@@ -348,18 +391,15 @@ curl -X POST http://localhost:8080/api/chat/orchestrate \
 
 ## 11. 端到端演示步骤
 
-```text
-1. 启动应用（./mvnw spring-boot:run）
-2. 浏览器打开 http://localhost:8080
-3. 创建知识空间：POST /api/kb/spaces
-4. 上传文档：POST /api/kb/spaces/{id}/documents
-5. 选择知识空间后在页面提问
-6. 查看回答中的引用与置信度
-7. 对回答点赞/点踩
-8. 管理员查看反馈记录
-```
-
-> 注：当前步骤 3-4 需通过 curl/API 工具完成，页面文档上传 UI 开发中。步骤 5-7 的前端交互待完善。
+1. **启动应用**：`./mvnw spring-boot:run`，浏览器打开 <http://localhost:8080>
+2. **注册/登录**：点击右上角用户图标，注册账号并登录
+3. **配置 API Key**：点击齿轮图标，确认平台访问 Key 为 `dev-key-change-in-production`
+4. **创建知识空间**：点击"创建空间"按钮，输入名称和描述
+5. **上传文档**：选择知识空间后，点击文档图标，拖拽或选择 TXT/Markdown/PDF 文件上传
+6. **提问**：在知识空间下拉框选择空间后，在输入框提问
+7. **查看引用**：回答中引用以 `[1]` 编号显示，点击可展开原文片段、文件名和版本号
+8. **反馈**：点击"有帮助"或"没帮助"对回答进行评价
+9. **查看历史**：系统自动持久化对话消息，按会话隔离
 
 ---
 
