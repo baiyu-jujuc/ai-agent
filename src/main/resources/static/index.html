@@ -429,6 +429,7 @@ body{font-family:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-s
 
 <script>
 let conversationId='session-'+Date.now();
+let spaceConversations={};
 let selectedAgent='coordinator';
 let useTools=false;
 let useStream=false;
@@ -442,6 +443,12 @@ function getModelKey(){return(localStorage.getItem('modelApiKey')||'').trim();}
 function getJwtToken(){return localStorage.getItem('jwtToken')||'';}
 function getCurrentUser(){
   try{return JSON.parse(localStorage.getItem('currentUser')||'null');}catch{return null;}
+}
+function getSpaceConversationId(spaceId){
+  if(!spaceConversations[spaceId]){
+    spaceConversations[spaceId]='kb-'+spaceId+'-'+Date.now();
+  }
+  return spaceConversations[spaceId];
 }
 
 async function apiFetch(path,options={}){
@@ -723,7 +730,8 @@ async function sendMessage(){
     if(selectedSpace){
       const typingEl=addTypingIndicator();
       try{
-        const body={question:text,conversationId};
+        const kbConvId=getSpaceConversationId(selectedSpace);
+        const body={question:text,conversationId:kbConvId};
         const res=await apiFetch('/api/kb/spaces/'+encodeURIComponent(selectedSpace)+'/ask',{
           method:'POST',
           body:JSON.stringify(body)

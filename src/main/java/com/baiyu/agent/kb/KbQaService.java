@@ -1,10 +1,13 @@
 package com.baiyu.agent.kb;
 
+import com.baiyu.agent.config.ChatModelFactory;
 import com.baiyu.agent.kb.entity.*;
 import com.baiyu.agent.kb.repository.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,22 +26,39 @@ public class KbQaService {
     private final FeedbackRepository feedbackRepo;
     private final KbMessageRepository messageRepo;
     private final ChatClient chatClient;
+    private final ChatModelFactory chatModelFactory;
+    private final boolean allowClientModelKey;
 
     public KbQaService(
             KnowledgeBaseService kbService,
             CitationRepository citationRepo,
             FeedbackRepository feedbackRepo,
             KbMessageRepository messageRepo,
-            ChatClient chatClient) {
+            ChatClient chatClient,
+            ChatModelFactory chatModelFactory,
+            @Value("${agent.security.allow-client-model-key:false}") boolean allowClientModelKey) {
         this.kbService = kbService;
         this.citationRepo = citationRepo;
         this.feedbackRepo = feedbackRepo;
         this.messageRepo = messageRepo;
         this.chatClient = chatClient;
+        this.chatModelFactory = chatModelFactory;
+        this.allowClientModelKey = allowClientModelKey;
     }
 
     @Transactional
     public QaResult ask(String spaceId, String question, String conversationId, String userId) {
+        return ask(spaceId, question, conversationId, userId, null);
+    }
+
+    /**
+     * Ask a question with optional per-request model API key.
+     * The model key is only used when allow-client-model-key is enabled.
+     * The key is never logged, persisted, or included in error messages.
+     */
+    @Transactional
+    public QaResult ask(String spaceId, String question, String conversationId,
+                        String userId, String modelApiKey) {
         if (question == null || question.isBlank()) {
             throw new IllegalArgumentException("question 不能为空");
         }
@@ -47,6 +67,14 @@ public class KbQaService {
         }
         if (userId == null || userId.isBlank()) {
             throw new IllegalArgumentException("userId 不能为空");
+        }
+
+        // Determine which ChatClient to use
+        ChatClient activeClient = chatClient;
+        ChatModel perRequestModel = null;
+        if (allowClientModelKey && modelApiKey != null && !modelApiKey.isBlank()) {
+            perRequestModel = chatModelFactory.createChatModel(modelApiKey);
+            activeClient = ChatClient.builder(perRequestModel).build();
         }
 
         // Save user message before retrieval
@@ -87,12 +115,12 @@ public class KbQaService {
 
         String answer;
         try {
-            answer = chatClient.prompt()
+            answer = activeClient.prompt()
                     .user(augmentedPrompt)
                     .call()
                     .content();
         } catch (Exception e) {
-            log.error("LLM call failed for space '{}': {}", spaceId, e.getMessage());
+            log.error("LLM call failed for space '{}'", spaceId);
             answer = "回答生成失败，请稍后重试。";
         }
 

@@ -33,7 +33,8 @@ public class KbQaController {
 
     @PostMapping("/spaces/{spaceId}/ask")
     public Map<String, Object> ask(@PathVariable String spaceId,
-                                   @RequestBody Map<String, String> request) {
+                                   @RequestBody Map<String, String> request,
+                                   @RequestHeader(value = "X-Model-API-Key", required = false) String modelApiKey) {
         String userId = currentUserId();
         if (!permissionService.canRead(spaceId, userId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权访问该知识空间");
@@ -43,7 +44,7 @@ public class KbQaController {
             throw new IllegalArgumentException("question 不能为空");
         }
         String conversationId = request.getOrDefault("conversationId", spaceId + ":" + userId);
-        KbQaService.QaResult result = qaService.ask(spaceId, question, conversationId, userId);
+        KbQaService.QaResult result = qaService.ask(spaceId, question, conversationId, userId, modelApiKey);
 
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("messageId", result.messageId());

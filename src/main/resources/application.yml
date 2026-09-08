@@ -129,6 +129,13 @@ agent:
     rate-limit-per-minute: ${RATE_LIMIT:30}
     # CORS 允许来源
     allowed-origins: ${ALLOWED_ORIGINS:http://localhost:8080,http://localhost:3000,http://127.0.0.1:8080}
+    # T3: 允许客户端传递模型 API Key（默认关闭，仅私有部署可开启）
+    # 开启后，服务端读取 X-Model-API-Key 请求头，仅用于当前请求的 LLM 调用
+    # Key 不进入日志、数据库、URL、异常响应，请求结束后不保留
+    allow-client-model-key: ${ALLOW_CLIENT_MODEL_KEY:false}
+    # JWT 密钥（生产环境必须修改）
+    jwt-secret: ${JWT_SECRET:default-jwt-secret-change-in-production-at-least-32-chars}
+    jwt-expiration-ms: ${JWT_EXPIRATION_MS:86400000}
   # 对话记忆预算：超出后裁剪最早的消息 / 淘汰最久未用的会话
   memory:
     max-tokens: ${MEMORY_MAX_TOKENS:8000}

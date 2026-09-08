@@ -52,6 +52,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if (auth == null || auth.getPrincipal() == null) {
             return null;
         }
+        // 排除匿名认证
+        if (!auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
+            return null;
+        }
         return auth.getPrincipal().toString();
     }
 }
