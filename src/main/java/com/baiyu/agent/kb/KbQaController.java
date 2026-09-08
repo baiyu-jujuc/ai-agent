@@ -1,8 +1,13 @@
 package com.baiyu.agent.kb;
 
-import com.baiyu.agent.kb.entity.Citation;
-import com.baiyu.agent.kb.entity.Feedback;
+import com.baiyu.agent.kb.entity.*;
+import com.baiyu.agent.kb.repository.ChunkRepository;
+import com.baiyu.agent.kb.repository.DocumentRepository;
+import com.baiyu.agent.kb.repository.DocumentVersionRepository;
+import com.baiyu.agent.user.JwtAuthFilter;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.*;
 
@@ -11,19 +16,33 @@ import java.util.*;
 public class KbQaController {
 
     private final KbQaService qaService;
+    private final PermissionService permissionService;
+    private final DocumentRepository docRepo;
+    private final DocumentVersionRepository versionRepo;
+    private final ChunkRepository chunkRepo;
 
-    public KbQaController(KbQaService qaService) {
+    public KbQaController(KbQaService qaService, PermissionService permissionService,
+                          DocumentRepository docRepo, DocumentVersionRepository versionRepo,
+                          ChunkRepository chunkRepo) {
         this.qaService = qaService;
+        this.permissionService = permissionService;
+        this.docRepo = docRepo;
+        this.versionRepo = versionRepo;
+        this.chunkRepo = chunkRepo;
     }
 
     @PostMapping("/spaces/{spaceId}/ask")
     public Map<String, Object> ask(@PathVariable String spaceId,
                                    @RequestBody Map<String, String> request) {
+        String userId = currentUserId();
+        if (!permissionService.canRead(spaceId, userId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权访问该知识空间");
+        }
         String question = request.get("question");
         if (question == null || question.isBlank()) {
             throw new IllegalArgumentException("question 不能为空");
         }
-        String conversationId = request.getOrDefault("conversationId", spaceId + ":default");
+        String conversationId = request.getOrDefault("conversationId", spaceId + ":" + userId);
         KbQaService.QaResult result = qaService.ask(spaceId, question, conversationId);
 
         Map<String, Object> resp = new LinkedHashMap<>();
@@ -38,6 +57,12 @@ public class KbQaController {
             Map<String, Object> cm = new LinkedHashMap<>();
             cm.put("citationId", c.getId());
             cm.put("documentId", c.getDocumentId());
+            docRepo.findById(c.getDocumentId()).ifPresent(d -> cm.put("documentName", d.getFilename()));
+            versionRepo.findById(c.getVersionId()).ifPresent(v -> cm.put("versionNo", v.getVersionNo()));
+            chunkRepo.findById(c.getChunkId()).ifPresent(ch -> {
+                cm.put("content", ch.getContent());
+                if (ch.getHeading() != null) cm.put("heading", ch.getHeading());
+            });
             cm.put("versionId", c.getVersionId());
             cm.put("chunkId", c.getChunkId());
             cm.put("score", c.getScore());
@@ -49,6 +74,7 @@ public class KbQaController {
 
     @PostMapping("/feedback")
     public Map<String, Object> submitFeedback(@RequestBody Map<String, String> request) {
+        String userId = currentUserId();
         String messageId = request.get("messageId");
         String spaceId = request.get("spaceId");
         String thumbs = request.get("thumbs");
@@ -56,6 +82,9 @@ public class KbQaController {
         String correction = request.getOrDefault("correction", "");
         if (messageId == null || spaceId == null || thumbs == null) {
             throw new IllegalArgumentException("messageId, spaceId, thumbs 不能为空");
+        }
+        if (!permissionService.canRead(spaceId, userId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权访问该知识空间");
         }
         Feedback fb = qaService.submitFeedback(messageId, spaceId, thumbs, reason, correction);
         Map<String, Object> resp = new LinkedHashMap<>();
@@ -66,6 +95,10 @@ public class KbQaController {
 
     @GetMapping("/spaces/{spaceId}/feedback")
     public List<Map<String, Object>> getFeedback(@PathVariable String spaceId) {
+        String userId = currentUserId();
+        if (!permissionService.canRead(spaceId, userId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权访问该知识空间");
+        }
         return qaService.getFeedback(spaceId).stream()
                 .map(f -> {
                     Map<String, Object> m = new LinkedHashMap<>();
@@ -93,5 +126,13 @@ public class KbQaController {
                     return m;
                 })
                 .toList();
+    }
+
+    private String currentUserId() {
+        String userId = JwtAuthFilter.getCurrentUserId();
+        if (userId == null || userId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "请先登录");
+        }
+        return userId;
     }
 }
