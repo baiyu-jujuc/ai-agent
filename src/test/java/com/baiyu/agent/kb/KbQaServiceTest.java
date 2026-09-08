@@ -1,5 +1,6 @@
 package com.baiyu.agent.kb;
 
+import com.baiyu.agent.config.ChatModelFactory;
 import com.baiyu.agent.kb.entity.Chunk;
 import com.baiyu.agent.kb.entity.KbMessage;
 import com.baiyu.agent.kb.repository.*;
@@ -22,6 +23,7 @@ class KbQaServiceTest {
     private FeedbackRepository feedbackRepo;
     private KbMessageRepository messageRepo;
     private ChatClient chatClient;
+    private ChatModelFactory chatModelFactory;
 
     @BeforeEach
     void setUp() {
@@ -30,12 +32,13 @@ class KbQaServiceTest {
         feedbackRepo = mock(FeedbackRepository.class);
         messageRepo = mock(KbMessageRepository.class);
         chatClient = mock(ChatClient.class);
+        chatModelFactory = mock(ChatModelFactory.class);
 
         when(citationRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(feedbackRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(messageRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        qaService = new KbQaService(kbService, citationRepo, feedbackRepo, messageRepo, chatClient);
+        qaService = new KbQaService(kbService, citationRepo, feedbackRepo, messageRepo, chatClient, chatModelFactory, false);
     }
 
     @Test
