@@ -346,7 +346,7 @@ curl -X POST http://localhost:8080/api/chat/orchestrate \
 ./mvnw clean verify --no-transfer-progress
 ```
 
-当前仓库包含 130 个自动化测试，覆盖：
+当前仓库包含 131 个自动化测试，覆盖：
 
 - ChatController 参数与状态码
 - KB 服务、KbQaService 问答、消息持久化与多轮上下文
@@ -383,7 +383,7 @@ curl -X POST http://localhost:8080/api/chat/orchestrate \
 - ✅ 浅色 DeepSeek 风格中文 Web UI
 - ✅ 模型注册、SSE、工具调用、多 Agent 编排（含执行轨迹）
 - ✅ GitHub Actions CI、Dockerfile、Compose、Maven Wrapper
-- ✅ 130 个自动化测试（不依赖外网 LLM）
+- ✅ 131 个自动化测试（不依赖外网 LLM）
 - ✅ 文档分块（中文单字分词 + 英文 token）、PDF/Markdown 读取
 - ✅ 文档版本管理与回滚（含向量索引同步）
 - ✅ 统一异常处理、Actuator 最小暴露

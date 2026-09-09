@@ -95,7 +95,7 @@ public class ChatController {
         try {
             ChatClient activeClient = resolveClient(modelApiKey);
             if (useTools) {
-                response = functionCallingService.executeWithTools(message, model, history);
+                response = functionCallingService.executeWithTools(activeClient, message, model, history);
             } else {
                 response = activeClient.prompt()
                         .messages(history)
@@ -152,10 +152,11 @@ public class ChatController {
         if (useToolPath) {
             // B3: Tool/agent path — blocking, result as single event
             Agent targetAgent = agents.getOrDefault(agent, coordinatorAgent);
+            ChatClient activeClient = resolveClient(modelApiKey);
             try {
                 String result = useTools
-                        ? functionCallingService.executeWithTools(message, resolvedModel, history)
-                        : targetAgent.executeWithModel(message, resolvedModel, history);
+                        ? functionCallingService.executeWithTools(activeClient, message, resolvedModel, history)
+                        : targetAgent.executeWithModel(message, resolvedModel, history, activeClient);
                 contentFlux = Flux.just(result == null ? "" : result);
             } catch (Exception e) {
                 contentFlux = Flux.just("Agent 执行失败，请稍后重试。");
@@ -208,7 +209,8 @@ public class ChatController {
 
         String response;
         try {
-            response = targetAgent.executeWithModel(message, model, history);
+            ChatClient activeClient = resolveClient(modelApiKey);
+            response = targetAgent.executeWithModel(message, model, history, activeClient);
         } catch (Exception e) {
             response = "Agent 执行失败，请稍后重试。";
         }

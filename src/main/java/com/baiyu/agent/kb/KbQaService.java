@@ -88,8 +88,11 @@ public class KbQaService {
         List<KbMessage> recentHistory = history.stream()
                 .filter(m -> !"assistant".equals(m.getRole()) || (m.getContent() != null && !m.getContent().isBlank()
                         && !m.getContent().startsWith("回答生成失败")))
-                .limit(20)
                 .toList();
+        // Keep only the most recent 20 records; history is ascending from the repository.
+        if (recentHistory.size() > 20) {
+            recentHistory = recentHistory.subList(recentHistory.size() - 20, recentHistory.size());
+        }
         // Exclude the just-saved user message from history (it's already in the question)
         recentHistory = recentHistory.stream()
                 .filter(m -> !userMessageId.equals(m.getMessageId()))

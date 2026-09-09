@@ -311,4 +311,41 @@ class KbQaServiceTest {
 
         verify(chatModelFactory).createChatModel("sk-user-provided-key");
     }
+
+    // P3-final: history must keep the most recent 20 messages, not the first 20
+    @Test
+    void askKeepsMostRecentTwentyHistoryMessages() {
+        List<KbMessage> allHistory = new java.util.ArrayList<>();
+        for (int i = 0; i < 25; i++) {
+            allHistory.add(new KbMessage(
+                    "space-001", "conv-history", "history-" + i, "user-001",
+                    "user", "old question " + i, null, null));
+            allHistory.add(new KbMessage(
+                    "space-001", "conv-history", "history-answer-" + i, "user-001",
+                    "assistant", "old answer " + i, "medium", 0.5));
+        }
+        when(messageRepo.findByConversationIdOrderByCreatedAtAsc("conv-history"))
+                .thenReturn(allHistory);
+
+        Chunk chunk = new Chunk("ver-001", "space-001", "doc-001", "latest content", 0);
+        ReflectionTestUtils.setField(chunk, "id", "chunk-001");
+        when(kbService.searchChunks("space-001", "latest question", 5))
+                .thenReturn(List.of(chunk));
+
+        ChatClient.ChatClientRequestSpec spec = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.CallResponseSpec callSpec = mock(ChatClient.CallResponseSpec.class);
+        when(chatClient.prompt()).thenReturn(spec);
+        when(spec.user(any(String.class))).thenReturn(spec);
+        when(spec.call()).thenReturn(callSpec);
+        when(callSpec.content()).thenReturn("answer [1]");
+
+        qaService.ask("space-001", "latest question", "conv-history", "user-001");
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(spec).user(promptCaptor.capture());
+        String prompt = promptCaptor.getValue();
+        assertTrue(prompt.contains("old answer 24"), "Prompt should contain the newest history entry");
+        assertTrue(prompt.contains("old question 24"), "Prompt should contain the newest user entry");
+        assertFalse(prompt.contains("old question 0"), "Prompt should not contain the oldest history entry");
+    }
 }

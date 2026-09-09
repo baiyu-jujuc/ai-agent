@@ -48,24 +48,33 @@ public class CoordinatorAgent extends AbstractAgent {
 
     @Override
     public String executeWithModel(String input, String model, List<Message> context) {
-        String routingDecision = determineAgent(input);
+        return executeWithModel(input, model, context, chatClient);
+    }
+
+    @Override
+    public String executeWithModel(String input, String model, List<Message> context, ChatClient client) {
+        String routingDecision = determineAgent(input, client);
         Agent targetAgent = agents.getOrDefault(routingDecision, this);
 
         if (targetAgent == this) {
-            return super.executeWithModel(input, model, context);
+            return super.executeWithModel(input, model, context, client);
         }
 
         log.info("Routing to agent: {} for input: {}", routingDecision,
                 input.length() > 50 ? input.substring(0, 50) + "..." : input);
-        return targetAgent.executeWithModel(input, model, context);
+        return targetAgent.executeWithModel(input, model, context, client);
     }
 
     private String determineAgent(String input) {
+        return determineAgent(input, chatClient);
+    }
+
+    private String determineAgent(String input, ChatClient client) {
         if (input == null || input.isBlank()) {
             return "coordinator";
         }
         try {
-            RoutingDecision decision = chatClient.prompt()
+            RoutingDecision decision = client.prompt()
                     .system("""
                             你是一个意图分类器。根据用户请求判断应由哪个专家处理，只输出 JSON，不要解释。
                             可选值:

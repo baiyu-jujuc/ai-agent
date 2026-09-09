@@ -32,6 +32,11 @@ public abstract class AbstractAgent implements Agent {
 
     @Override
     public String executeWithModel(String input, String model, List<Message> context) {
+        return executeWithModel(input, model, context, chatClient);
+    }
+
+    @Override
+    public String executeWithModel(String input, String model, List<Message> context, ChatClient client) {
         List<Message> messages = new ArrayList<>();
         messages.add(new SystemMessage(systemPrompt));
         if (context != null) {
@@ -39,7 +44,7 @@ public abstract class AbstractAgent implements Agent {
         }
         messages.add(new UserMessage(input));
 
-        var spec = chatClient.prompt(new Prompt(messages));
+        var spec = client.prompt(new Prompt(messages));
         if (model != null && !model.isEmpty()) {
             spec.options(ChatOptions.builder().model(model).build());
         }

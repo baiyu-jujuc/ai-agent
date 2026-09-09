@@ -90,13 +90,11 @@ public class KbQaController {
         if (!permissionService.canRead(spaceId, userId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权访问该知识空间");
         }
-        // Verify messageId belongs to this space and current user
-        var messages = qaService.getMessages(messageId.split(":")[0]);
-        boolean belongsToSpace = messageRepo.findById(messageId)
-                .map(m -> spaceId.equals(m.getSpaceId()))
-                .orElse(false);
-        if (!belongsToSpace) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "消息不属于该知识空间");
+        // Verify messageId belongs to this space and was produced for the current user
+        KbMessage message = messageRepo.findByMessageId(messageId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "消息不存在"));
+        if (!spaceId.equals(message.getSpaceId()) || !userId.equals(message.getUserId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权对该消息提交反馈");
         }
         Feedback fb = qaService.submitFeedback(messageId, spaceId, thumbs, reason, correction);
         Map<String, Object> resp = new LinkedHashMap<>();
@@ -129,9 +127,11 @@ public class KbQaController {
     public List<Map<String, Object>> getCitations(@PathVariable String messageId) {
         String userId = currentUserId();
         // Resolve spaceId from the message to check permission
-        KbMessage msg = messageRepo.findById(messageId)
+        KbMessage msg = messageRepo.findByMessageId(messageId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "消息不存在"));
-        if (!permissionService.canRead(msg.getSpaceId(), userId)) {
+        boolean canReadMessage = permissionService.canRead(msg.getSpaceId(), userId)
+                && (userId.equals(msg.getUserId()) || permissionService.canAdmin(msg.getSpaceId(), userId));
+        if (!canReadMessage) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权访问该消息的引用");
         }
         return qaService.getCitations(messageId).stream()

@@ -22,6 +22,10 @@ public class FunctionCallingService {
     }
 
     public String executeWithTools(String userInput, String model, List<Message> history) {
+        return executeWithTools(chatClient, userInput, model, history);
+    }
+
+    public String executeWithTools(ChatClient client, String userInput, String model, List<Message> history) {
         List<Message> messages = new ArrayList<>();
         messages.add(new SystemMessage("你是多功能AI助手，可以调用工具来帮助用户。" +
                 "需要时主动调用合适的工具，并根据工具结果用用户的语言给出完整回答。" +
@@ -31,7 +35,7 @@ public class FunctionCallingService {
         }
         messages.add(new UserMessage(userInput));
 
-        var spec = chatClient.prompt()
+        var spec = client.prompt()
                 .messages(messages)
                 .tools((Object[]) toolRegistry.components());
 

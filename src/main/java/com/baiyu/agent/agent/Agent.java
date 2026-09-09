@@ -1,5 +1,6 @@
 package com.baiyu.agent.agent;
 
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import java.util.List;
 
@@ -12,4 +13,6 @@ public interface Agent {
     String execute(String input, List<Message> context);
 
     String executeWithModel(String input, String model, List<Message> context);
+
+    String executeWithModel(String input, String model, List<Message> context, ChatClient client);
 }
