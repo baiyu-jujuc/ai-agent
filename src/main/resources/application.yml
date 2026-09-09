@@ -22,11 +22,12 @@ spring:
       max-file-size: 10MB
       max-request-size: 12MB
 
-  # Qdrant VectorStore is created explicitly in VectorStoreConfig.
-  # The starter auto-config is always excluded so memory mode never requires an EmbeddingModel.
+  # QdrantVectorStore is created explicitly in VectorStoreConfig for qdrant mode.
+  # The starter auto-config is excluded by default (memory mode) so memory mode never requires an EmbeddingModel.
+  # In qdrant mode, the auto-config is NOT excluded — it provides the QdrantClient bean.
   autoconfigure:
     exclude:
-      org.springframework.ai.vectorstore.qdrant.autoconfigure.QdrantVectorStoreAutoConfiguration
+      ${AUTOCONFIG_EXCLUDE:org.springframework.ai.vectorstore.qdrant.autoconfigure.QdrantVectorStoreAutoConfiguration}
 
   # H2 Database (development)
   datasource:
@@ -152,3 +153,9 @@ logging:
   level:
     com.baiyu.agent: ${LOG_LEVEL:INFO}
     org.springframework.ai: ${AI_LOG_LEVEL:INFO}
+
+# Legacy RAG endpoints (/api/rag/**) — disabled by default in production.
+# Enable only for local debugging; these endpoints bypass knowledge space isolation.
+legacy:
+  rag:
+    enabled: ${LEGACY_RAG_ENABLED:false}

@@ -83,35 +83,32 @@ public class KbQaService {
                 "user", question, null, null);
         messageRepo.save(userMsg);
 
+        // Read conversation history for multi-turn context (last 10 messages, excluding failed assistant responses)
+        List<KbMessage> history = messageRepo.findByConversationIdOrderByCreatedAtAsc(conversationId);
+        List<KbMessage> recentHistory = history.stream()
+                .filter(m -> !"assistant".equals(m.getRole()) || (m.getContent() != null && !m.getContent().isBlank()
+                        && !m.getContent().startsWith("回答生成失败")))
+                .limit(20)
+                .toList();
+        // Exclude the just-saved user message from history (it's already in the question)
+        recentHistory = recentHistory.stream()
+                .filter(m -> !userMessageId.equals(m.getMessageId()))
+                .toList();
+
         List<Chunk> chunks = kbService.searchChunks(spaceId, question, SEARCH_TOP_K);
 
         if (chunks.isEmpty()) {
+            String noContentAnswer = buildNoContentAnswer(question, recentHistory);
             String msgId = UUID.randomUUID().toString();
             KbMessage assistantMsg = new KbMessage(spaceId, conversationId, msgId, userId,
-                    "assistant", "抱歉，当前知识空间中没有找到与您问题相关的内容。请尝试上传相关文档或调整问题措辞。",
-                    "low", 0.0);
+                    "assistant", noContentAnswer, "low", 0.0);
             messageRepo.save(assistantMsg);
-            return new QaResult(
-                    msgId,
-                    "抱歉，当前知识空间中没有找到与您问题相关的内容。请尝试上传相关文档或调整问题措辞。",
-                    Collections.emptyList(),
-                    "low",
-                    0.0,
-                    conversationId
-            );
+            return new QaResult(msgId, noContentAnswer, Collections.emptyList(), "low", 0.0, conversationId);
         }
 
         String context = buildContext(chunks);
-        String augmentedPrompt = """
-                基于以下知识库内容回答问题。如果内容中没有相关信息，请明确说明"知识库中未找到相关内容"。
-
-                知识库内容:
-                %s
-
-                问题: %s
-
-                请给出准确、简洁的回答，并在末尾标注引用的来源编号 [1], [2] 等。
-                """.formatted(context, question);
+        String historyContext = buildHistoryContext(recentHistory);
+        String augmentedPrompt = buildPrompt(context, historyContext, question);
 
         String answer;
         try {
@@ -179,6 +176,53 @@ public class KbQaService {
             sb.append("\n\n");
         }
         return sb.toString();
+    }
+
+    private String buildHistoryContext(List<KbMessage> history) {
+        if (history.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        sb.append("以下是之前的对话历史，请参考上下文理解用户的追问：\n\n");
+        for (KbMessage m : history) {
+            String role = "user".equals(m.getRole()) ? "用户" : "助手";
+            sb.append(role).append(": ").append(m.getContent());
+            sb.append("\n");
+        }
+        sb.append("\n");
+        return sb.toString();
+    }
+
+    private String buildPrompt(String context, String historyContext, String question) {
+        if (historyContext.isEmpty()) {
+            return """
+                    基于以下知识库内容回答问题。如果内容中没有相关信息，请明确说明"知识库中未找到相关内容"。
+
+                    知识库内容:
+                    %s
+
+                    问题: %s
+
+                    请给出准确、简洁的回答，并在末尾标注引用的来源编号 [1], [2] 等。
+                    """.formatted(context, question);
+        }
+        return """
+                基于以下知识库内容和对话历史回答问题。如果知识库内容中没有相关信息，请明确说明"知识库中未找到相关内容"。
+                结合对话历史理解用户的追问意图。
+
+                %s
+                知识库内容:
+                %s
+
+                问题: %s
+
+                请给出准确、简洁的回答，并在末尾标注引用的来源编号 [1], [2] 等。
+                """.formatted(historyContext, context, question);
+    }
+
+    private String buildNoContentAnswer(String question, List<KbMessage> history) {
+        if (history.isEmpty()) {
+            return "抱歉，当前知识空间中没有找到与您问题相关的内容。请尝试上传相关文档或调整问题措辞。";
+        }
+        return "知识库中未找到与当前问题直接相关的内容。根据对话上下文，请尝试更具体的提问，或上传相关文档以补充知识库。";
     }
 
     private String computeConfidence(double topScore, int chunkCount) {

@@ -6,6 +6,7 @@ import com.baiyu.agent.kb.entity.KbMessage;
 import com.baiyu.agent.kb.repository.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -13,6 +14,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.*;
 
 class KbQaServiceTest {
@@ -224,5 +226,89 @@ class KbQaServiceTest {
         verify(citationRepo).save(argThat(cit ->
                 resultMessageId.equals(((com.baiyu.agent.kb.entity.Citation) cit).getMessageId())
         ));
+    }
+
+    // P3-8 #4: Verify multi-turn conversation history is read and included in the prompt
+    @Test
+    void askIncludesConversationHistoryInPrompt() {
+        KbMessage priorUser = new KbMessage("space-001", "conv-multi", "msg-prior-user", "user-001",
+                "user", "本文档中的部署命令是什么", null, null);
+        KbMessage priorAssistant = new KbMessage("space-001", "conv-multi", "msg-prior-assistant", "user-001",
+                "assistant", "部署命令是 mvn spring-boot:run", "high", 0.85);
+
+        when(messageRepo.findByConversationIdOrderByCreatedAtAsc("conv-multi"))
+                .thenReturn(List.of(priorUser, priorAssistant));
+
+        Chunk c1 = new Chunk("ver-001", "space-001", "doc-001", "deploy with mvn spring-boot:run on port 8080", 0);
+        ReflectionTestUtils.setField(c1, "id", "chunk-001");
+        when(kbService.searchChunks("space-001", "启动后应该访问哪个端口", 5))
+                .thenReturn(List.of(c1));
+
+        ChatClient.ChatClientRequestSpec spec = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.CallResponseSpec callSpec = mock(ChatClient.CallResponseSpec.class);
+        when(chatClient.prompt()).thenReturn(spec);
+        when(spec.user(any(String.class))).thenReturn(spec);
+        when(spec.call()).thenReturn(callSpec);
+        when(callSpec.content()).thenReturn("启动后访问端口 8080 [1]");
+
+        qaService.ask("space-001", "启动后应该访问哪个端口", "conv-multi", "user-001");
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(spec).user(promptCaptor.capture());
+
+        String prompt = promptCaptor.getValue();
+        assertTrue(prompt.contains("对话历史"), "Prompt should contain conversation history section");
+        assertTrue(prompt.contains("部署命令"), "Prompt should contain prior user message content");
+        assertTrue(prompt.contains("mvn spring-boot:run"), "Prompt should contain prior assistant response");
+    }
+
+    // P3-8 #5: Verify model API key is ignored when allow-client-model-key=false
+    @Test
+    void modelApiKeyIgnoredWhenDisabled() {
+        Chunk c1 = new Chunk("ver-001", "space-001", "doc-001", "some content", 0);
+        ReflectionTestUtils.setField(c1, "id", "chunk-001");
+        when(kbService.searchChunks(any(), any(), anyInt()))
+                .thenReturn(List.of(c1));
+
+        ChatClient.ChatClientRequestSpec spec = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.CallResponseSpec callSpec = mock(ChatClient.CallResponseSpec.class);
+        when(chatClient.prompt()).thenReturn(spec);
+        when(spec.user(any(String.class))).thenReturn(spec);
+        when(spec.call()).thenReturn(callSpec);
+        when(callSpec.content()).thenReturn("answer [1]");
+
+        // allowClientModelKey=false (default in setUp)
+        qaService.ask("space-001", "question", "conv-key-test", "user-001", "sk-user-provided-key");
+
+        // chatModelFactory.createChatModel should never be called when disabled
+        verify(chatModelFactory, never()).createChatModel(any());
+    }
+
+    // P3-8 #5: Verify model API key is used when allow-client-model-key=true
+    @Test
+    void modelApiKeyUsedWhenEnabled() {
+        KbQaService enabledService = new KbQaService(
+                kbService, citationRepo, feedbackRepo, messageRepo, chatClient, chatModelFactory, true);
+
+        Chunk c1 = new Chunk("ver-001", "space-001", "doc-001", "some content", 0);
+        ReflectionTestUtils.setField(c1, "id", "chunk-001");
+        when(kbService.searchChunks(any(), any(), anyInt()))
+                .thenReturn(List.of(c1));
+
+        org.springframework.ai.chat.model.ChatModel perRequestModel = mock(org.springframework.ai.chat.model.ChatModel.class);
+        when(chatModelFactory.createChatModel("sk-user-provided-key"))
+                .thenReturn(perRequestModel);
+
+        // When model key is provided and enabled, chatModelFactory should be called
+        // The ChatClient.builder(perRequestModel).build() creates a real client,
+        // but since perRequestModel is a mock, calling prompt() will return null → NPE
+        // This is acceptable: we just verify chatModelFactory.createChatModel was called
+        try {
+            enabledService.ask("space-001", "question", "conv-key-enabled", "user-001", "sk-user-provided-key");
+        } catch (Exception ignored) {
+            // Expected: mock ChatModel can't actually process prompts
+        }
+
+        verify(chatModelFactory).createChatModel("sk-user-provided-key");
     }
 }

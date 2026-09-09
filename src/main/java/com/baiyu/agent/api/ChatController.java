@@ -2,6 +2,7 @@ package com.baiyu.agent.api;
 
 import com.baiyu.agent.agent.Agent;
 import com.baiyu.agent.agent.CoordinatorAgent;
+import com.baiyu.agent.config.ChatModelFactory;
 import com.baiyu.agent.config.ModelRegistry;
 import com.baiyu.agent.memory.ChatMemoryService;
 import com.baiyu.agent.orchestrator.OrchestrationResult;
@@ -13,6 +14,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
@@ -34,6 +36,8 @@ public class ChatController {
     private final RagService ragService;
     private final Map<String, OrchestrationStrategy> strategies;
     private final ModelRegistry modelRegistry;
+    private final ChatModelFactory chatModelFactory;
+    private final boolean allowClientModelKey;
 
     public ChatController(ChatModel chatModel, ChatClient chatClient,
                          CoordinatorAgent coordinatorAgent,
@@ -43,7 +47,9 @@ public class ChatController {
                          FunctionCallingService functionCallingService,
                          RagService ragService,
                          Map<String, OrchestrationStrategy> strategies,
-                         ModelRegistry modelRegistry) {
+                         ModelRegistry modelRegistry,
+                         ChatModelFactory chatModelFactory,
+                         @Value("${agent.security.allow-client-model-key:false}") boolean allowClientModelKey) {
         this.chatModel = chatModel;
         this.chatClient = chatClient;
         this.coordinatorAgent = coordinatorAgent;
@@ -54,12 +60,23 @@ public class ChatController {
         this.ragService = ragService;
         this.strategies = strategies;
         this.modelRegistry = modelRegistry;
+        this.chatModelFactory = chatModelFactory;
+        this.allowClientModelKey = allowClientModelKey;
+    }
+
+    private ChatClient resolveClient(String modelApiKey) {
+        if (!allowClientModelKey || modelApiKey == null || modelApiKey.isBlank()) {
+            return chatClient;
+        }
+        ChatModel perRequestModel = chatModelFactory.createChatModel(modelApiKey);
+        return ChatClient.builder(perRequestModel).build();
     }
 
     private static final int MAX_MESSAGE_LENGTH = 10000;
 
     @PostMapping("/simple")
-    public Map<String, Object> chat(@RequestBody Map<String, String> request) {
+    public Map<String, Object> chat(@RequestBody Map<String, String> request,
+                                     @RequestHeader(value = "X-Model-API-Key", required = false) String modelApiKey) {
         String message = request.get("message");
         if (message == null || message.isBlank()) {
             throw new IllegalArgumentException("message 不能为空");
@@ -76,10 +93,16 @@ public class ChatController {
 
         String response;
         try {
+            ChatClient activeClient = resolveClient(modelApiKey);
             if (useTools) {
                 response = functionCallingService.executeWithTools(message, model, history);
             } else {
-                response = coordinatorAgent.execute(message, history);
+                response = activeClient.prompt()
+                        .messages(history)
+                        .user(message)
+                        .options(ChatOptions.builder().model(model).build())
+                        .call()
+                        .content();
             }
             if (response == null || response.isBlank()) {
                 response = "AI 返回了空回复，请重试。";
@@ -108,7 +131,8 @@ public class ChatController {
             @RequestParam(defaultValue = "default") String conversationId,
             @RequestParam(required = false) String model,
             @RequestParam(defaultValue = "coordinator") String agent,
-            @RequestParam(defaultValue = "false") boolean useTools) {
+            @RequestParam(defaultValue = "false") boolean useTools,
+            @RequestHeader(value = "X-Model-API-Key", required = false) String modelApiKey) {
         if (message == null || message.isBlank()) {
             throw new IllegalArgumentException("message 不能为空");
         }
@@ -138,7 +162,8 @@ public class ChatController {
             }
         } else {
             // B3: True streaming path via chatClient
-            contentFlux = chatClient.prompt()
+            ChatClient activeClient = resolveClient(modelApiKey);
+            contentFlux = activeClient.prompt()
                     .messages(history)
                     .user(message)
                     .options(ChatOptions.builder().model(resolvedModel).build())
@@ -161,7 +186,8 @@ public class ChatController {
 
     @PostMapping("/agent/{agentName}")
     public Map<String, Object> chatWithAgent(@PathVariable String agentName,
-                                             @RequestBody Map<String, String> request) {
+                                             @RequestBody Map<String, String> request,
+                                             @RequestHeader(value = "X-Model-API-Key", required = false) String modelApiKey) {
         String message = request.get("message");
         if (message == null || message.isBlank()) {
             throw new IllegalArgumentException("message 不能为空");

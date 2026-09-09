@@ -2,6 +2,7 @@ package com.baiyu.agent.api;
 
 import com.baiyu.agent.agent.Agent;
 import com.baiyu.agent.agent.CoordinatorAgent;
+import com.baiyu.agent.config.ChatModelFactory;
 import com.baiyu.agent.config.GlobalExceptionHandler;
 import com.baiyu.agent.config.ModelRegistry;
 import com.baiyu.agent.memory.ChatMemoryService;
@@ -50,10 +51,12 @@ class ChatControllerTest {
         when(memoryService.getConversationIds()).thenReturn(Collections.emptySet());
         when(ragService.getVectorStoreType()).thenReturn("memory");
 
+        ChatModelFactory chatModelFactory = mock(ChatModelFactory.class);
+
         ChatController controller = new ChatController(
                 chatModel, chatClient, coordinatorAgent, agents,
                 memoryService, toolRegistry, functionCallingService,
-                ragService, strategies, modelRegistry);
+                ragService, strategies, modelRegistry, chatModelFactory, false);
 
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())

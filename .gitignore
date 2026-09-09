@@ -49,9 +49,10 @@ onnx-cache/
 *.bak
 .remote-snapshot/
 
-# 本地参考文档（非源码）
+# 本地参考文档（非源码，不上传到GitHub）
 deploy-guide.html
-*.bak
+docs/trae-*.md
+docs/demo-checklist.md
 
 # TRAE
 .trae*

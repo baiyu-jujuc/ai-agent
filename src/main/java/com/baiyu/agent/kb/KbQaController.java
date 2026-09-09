@@ -4,6 +4,7 @@ import com.baiyu.agent.kb.entity.*;
 import com.baiyu.agent.kb.repository.ChunkRepository;
 import com.baiyu.agent.kb.repository.DocumentRepository;
 import com.baiyu.agent.kb.repository.DocumentVersionRepository;
+import com.baiyu.agent.kb.repository.KbMessageRepository;
 import com.baiyu.agent.user.JwtAuthFilter;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -20,15 +21,17 @@ public class KbQaController {
     private final DocumentRepository docRepo;
     private final DocumentVersionRepository versionRepo;
     private final ChunkRepository chunkRepo;
+    private final KbMessageRepository messageRepo;
 
     public KbQaController(KbQaService qaService, PermissionService permissionService,
                           DocumentRepository docRepo, DocumentVersionRepository versionRepo,
-                          ChunkRepository chunkRepo) {
+                          ChunkRepository chunkRepo, KbMessageRepository messageRepo) {
         this.qaService = qaService;
         this.permissionService = permissionService;
         this.docRepo = docRepo;
         this.versionRepo = versionRepo;
         this.chunkRepo = chunkRepo;
+        this.messageRepo = messageRepo;
     }
 
     @PostMapping("/spaces/{spaceId}/ask")
@@ -87,6 +90,14 @@ public class KbQaController {
         if (!permissionService.canRead(spaceId, userId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权访问该知识空间");
         }
+        // Verify messageId belongs to this space and current user
+        var messages = qaService.getMessages(messageId.split(":")[0]);
+        boolean belongsToSpace = messageRepo.findById(messageId)
+                .map(m -> spaceId.equals(m.getSpaceId()))
+                .orElse(false);
+        if (!belongsToSpace) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "消息不属于该知识空间");
+        }
         Feedback fb = qaService.submitFeedback(messageId, spaceId, thumbs, reason, correction);
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("feedbackId", fb.getId());
@@ -97,8 +108,8 @@ public class KbQaController {
     @GetMapping("/spaces/{spaceId}/feedback")
     public List<Map<String, Object>> getFeedback(@PathVariable String spaceId) {
         String userId = currentUserId();
-        if (!permissionService.canRead(spaceId, userId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权访问该知识空间");
+        if (!permissionService.canAdmin(spaceId, userId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "需要管理员权限查看反馈");
         }
         return qaService.getFeedback(spaceId).stream()
                 .map(f -> {
@@ -116,6 +127,13 @@ public class KbQaController {
 
     @GetMapping("/messages/{messageId}/citations")
     public List<Map<String, Object>> getCitations(@PathVariable String messageId) {
+        String userId = currentUserId();
+        // Resolve spaceId from the message to check permission
+        KbMessage msg = messageRepo.findById(messageId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "消息不存在"));
+        if (!permissionService.canRead(msg.getSpaceId(), userId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权访问该消息的引用");
+        }
         return qaService.getCitations(messageId).stream()
                 .map(c -> {
                     Map<String, Object> m = new LinkedHashMap<>();
@@ -136,7 +154,17 @@ public class KbQaController {
         if (!permissionService.canRead(spaceId, userId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权访问该知识空间");
         }
-        return qaService.getMessages(conversationId).stream()
+        // Non-admin users can only view their own conversations
+        boolean isAdmin = permissionService.canAdmin(spaceId, userId);
+        List<KbMessage> messages = qaService.getMessages(conversationId);
+        if (!isAdmin) {
+            boolean ownsConversation = messages.stream()
+                    .allMatch(m -> userId.equals(m.getUserId()));
+            if (!ownsConversation && !messages.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权查看他人会话");
+            }
+        }
+        return messages.stream()
                 .map(m -> {
                     Map<String, Object> msg = new LinkedHashMap<>();
                     msg.put("id", m.getId());

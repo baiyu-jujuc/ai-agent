@@ -78,11 +78,21 @@ public class KnowledgeBaseController {
 
     @GetMapping("/documents/{documentId}/versions")
     public List<Map<String, Object>> getVersions(@PathVariable String documentId) {
+        String userId = currentUserId();
+        String spaceId = kbService.getDocumentSpaceId(documentId);
+        if (!permissionService.canRead(spaceId, userId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权访问该文档");
+        }
         return kbService.getDocumentVersions(documentId).stream().map(this::toVersionMap).toList();
     }
 
     @GetMapping("/documents/{documentId}/versions/active")
     public Map<String, Object> getActiveVersion(@PathVariable String documentId) {
+        String userId = currentUserId();
+        String spaceId = kbService.getDocumentSpaceId(documentId);
+        if (!permissionService.canRead(spaceId, userId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权访问该文档");
+        }
         return toVersionMap(kbService.getActiveVersion(documentId));
     }
 

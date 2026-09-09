@@ -43,8 +43,8 @@
 | 用户鉴权 | JWT + Spring Security，注册/登录/获取当前用户，BCrypt 密码散列 | ✅ |
 | 文档上传 UI | 页面拖拽/选择上传、解析状态展示、版本列表、管理员回滚 | ✅ |
 | 引用与反馈 UI | 引用编号插入正文、点击展开原文片段、置信度 badge、点赞点踩 | ✅ |
-| 页面模型 Key | `X-Model-API-Key` 后端支持，`ChatModelFactory` per-request 安全注入，默认关闭 | ✅ |
-| Qdrant 生产模式 | 真实 Embedding + VectorStore 的 RAG 链路，版本化向量索引同步 | ✅ |
+| 页面模型 Key | `X-Model-API-Key` 全入口支持（chat/stream/agent/kb），`ChatModelFactory` per-request 安全注入，默认关闭 | ✅ |
+| Qdrant 生产模式 | Spring AI 自动配置 `QdrantClient`，版本化向量索引同步，内存模式零依赖 | ✅ |
 | 对话上下文隔离 | `conversationId` 隔离到用户 + 空间 + 会话，`KbMessage` 持久化 | ✅ |
 
 ---
@@ -170,8 +170,10 @@ Compose 默认保持 memory 模式可开箱运行，同时提供 Qdrant、Redis 
 
 - **注册/登录**：`POST /api/auth/register`、`POST /api/auth/login`，密码使用 BCrypt 散列存储。
 - **JWT Token**：登录后返回 JWT，前端存储在 `localStorage`，后续请求通过 `Authorization: Bearer <token>` 传递。
+- **Spring Security 路由级授权**：`/api/kb/**`、`/api/chat/**`（非公开GET）、`/api/rag/**`、`/api/tools/**` 均要求已认证，未登录返回 403。
 - **权限强制执行**：所有 KB API 通过 `PermissionService` 检查 `canRead`/`canWrite`/`canAdmin`。
 - **空间隔离**：`listSpaces` 只返回当前用户可访问的空间；非成员访问私有空间返回 403。
+- **资源归属校验**：按 `documentId` 访问的接口先解析 `spaceId` 再校验权限；按 `messageId` 访问的接口先校验消息归属；会话历史非 admin 只能查看自己的会话。
 
 ### 5.5 Qdrant 生产模式
 
@@ -179,6 +181,7 @@ Compose 默认保持 memory 模式可开箱运行，同时提供 Qdrant、Redis 
 
 ```bash
 export VECTOR_STORE_TYPE=qdrant
+export AUTOCONFIG_EXCLUDE=  # 清空排除，让 QdrantClient 自动配置生效
 export EMBEDDING_API_KEY=your-embedding-key
 export EMBEDDING_BASE_URL=https://api.openai.com
 export EMBEDDING_MODEL=text-embedding-3-small
@@ -187,9 +190,19 @@ export QDRANT_PORT=6333
 ./mvnw spring-boot:run
 ```
 
+- Qdrant 模式下，Spring AI 自动配置创建 `QdrantClient` Bean。
 - 文档上传/回滚时，向量按版本删除和重建，旧版本不污染检索结果。
 - 检索结果携带 `space_id` 过滤条件，确保空间隔离。
 - 内存模式保留作为测试和零依赖开发模式。
+
+### 5.6 多轮上下文问答
+
+知识库问答支持多轮对话上下文：
+
+- 每次 `ask` 时读取当前用户、空间、会话的最近历史消息（最多 20 条）。
+- 历史进入 prompt 时按时间顺序排列，过滤掉失败的助手回复。
+- 无相关文档时仍能基于上下文回答"知识库中未找到"。
+- 前端按空间维护独立 `conversationId`，避免跨空间上下文串扰。
 
 ---
 
@@ -319,6 +332,9 @@ curl -X POST http://localhost:8080/api/chat/orchestrate \
 | `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | Redis 地址 |
 | `RATE_LIMIT` | `30` | 每 IP 每分钟请求上限 |
 | `ALLOWED_ORIGINS` | 本机地址 | CORS 白名单 |
+| `ALLOW_CLIENT_MODEL_KEY` | `false` | 是否允许前端传入模型 API Key |
+| `LEGACY_RAG_ENABLED` | `false` | 是否启用旧 `/api/rag/**` 接口（默认关闭） |
+| `AUTOCONFIG_EXCLUDE` | Qdrant 自动配置类 | 内存模式下排除的自动配置类 |
 
 完整配置见 `.env.example`。
 
@@ -330,13 +346,16 @@ curl -X POST http://localhost:8080/api/chat/orchestrate \
 ./mvnw clean verify --no-transfer-progress
 ```
 
-当前仓库包含 119 个自动化测试，覆盖：
+当前仓库包含 130 个自动化测试，覆盖：
 
 - ChatController 参数与状态码
-- KB 服务、KbQaService 问答与消息持久化
+- KB 服务、KbQaService 问答、消息持久化与多轮上下文
 - 权限服务（canRead/canWrite/canAdmin）
 - 内存向量检索（含 similarityThreshold 过滤、Filter 表达式）
-- 安全鉴权（API Key、JWT、公开 GET、错误 Key）
+- Spring Security 路由级授权（未认证返回 403、公开 GET 放行）
+- 模型 API Key 一致性（allow-client-model-key 开关行为）
+- Qdrant Bean 装配（内存模式不创建 QdrantClient）
+- 旧 RAG 接口默认禁用（`legacy.rag.enabled=false`）
 - 编排策略（sequential / parallel + TaskTrace）
 - RAG 与内置工具
 
@@ -364,19 +383,23 @@ curl -X POST http://localhost:8080/api/chat/orchestrate \
 - ✅ 浅色 DeepSeek 风格中文 Web UI
 - ✅ 模型注册、SSE、工具调用、多 Agent 编排（含执行轨迹）
 - ✅ GitHub Actions CI、Dockerfile、Compose、Maven Wrapper
-- ✅ 119 个自动化测试（不依赖外网 LLM）
+- ✅ 130 个自动化测试（不依赖外网 LLM）
 - ✅ 文档分块（中文单字分词 + 英文 token）、PDF/Markdown 读取
 - ✅ 文档版本管理与回滚（含向量索引同步）
 - ✅ 统一异常处理、Actuator 最小暴露
 - ✅ JWT + Spring Security 用户鉴权（注册/登录/BCrypt）
-- ✅ 权限强制执行（canRead/canWrite/canAdmin 接入所有 KB API）
+- ✅ Spring Security 路由级授权（`/api/kb/**`、`/api/chat/**` 等要求已认证）
+- ✅ 权限强制执行（canRead/canWrite/canAdmin 接入所有 KB API，资源归属校验）
 - ✅ 页面文档上传 UI（拖拽/选择上传、解析状态、版本列表、回滚）
 - ✅ 知识空间问答主链路打通（选空间 → /api/kb/spaces/{id}/ask）
 - ✅ 引用与反馈 UI（编号引用、点击展开原文、置信度 badge、点赞点踩）
 - ✅ 对话上下文隔离（conversationId 隔离到用户 + 空间 + 会话）
 - ✅ 消息持久化（KbMessage 实体，按会话查询历史）
-- ✅ 页面模型 Key 后端支持（ChatModelFactory + allow-client-model-key）
-- ✅ Qdrant 生产模式（版本化向量索引、空间过滤、Embedding 集成）
+- ✅ 多轮上下文问答（历史消息进入 prompt，过滤失败回复）
+- ✅ 页面模型 Key 全入口支持（chat/stream/agent/kb 均读取 X-Model-API-Key）
+- ✅ Qdrant 生产模式（Spring AI 自动配置 QdrantClient，版本化向量索引，空间过滤）
+- ✅ 旧 RAG 接口默认禁用（`legacy.rag.enabled=false`，防止绕过知识空间隔离）
+- ✅ 前端 XSS 防护（escapeHtml 转义所有动态内容）
 
 ### 规划
 
@@ -384,8 +407,6 @@ curl -X POST http://localhost:8080/api/chat/orchestrate \
 - 🔜 生产数据库迁移脚本与审计日志
 - 🔜 文档级权限规则（deny 规则在检索前过滤）
 - 🔜 移动端适配优化
-
-详细改造方向见 [docs/trae-phase2-handoff.md](docs/trae-phase2-handoff.md)。
 
 ---
 

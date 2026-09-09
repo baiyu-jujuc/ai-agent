@@ -37,28 +37,33 @@ class SecurityConfigTest {
 
     @Test
     void publicPostWithoutKeyBlocked() throws Exception {
+        // P3-3: Spring Security now enforces authentication at route level.
+        // Without JWT, /api/tools/** returns 403 (Spring Security blocks before ApiKeyInterceptor)
         mockMvc.perform(post("/api/tools/calculator")
                         .contentType("application/json")
                         .content("{\"input\":\"2+3\"}"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isForbidden());
     }
 
     @Test
     void protectedPostWithCorrectKey() throws Exception {
+        // P3-3: Even with correct API Key, /api/tools/** requires JWT authentication.
+        // Without JWT, Spring Security blocks the request with 403.
         mockMvc.perform(post("/api/tools/calculator")
                         .contentType("application/json")
                         .header("X-API-Key", "test-secret-key")
                         .content("{\"input\":\"2+3\"}"))
-                .andExpect(status().isOk());
+                .andExpect(status().isForbidden());
     }
 
     @Test
     void protectedPostWithWrongKey() throws Exception {
+        // P3-3: Without JWT, Spring Security blocks regardless of API Key validity.
         mockMvc.perform(post("/api/tools/calculator")
                         .contentType("application/json")
                         .header("X-API-Key", "wrong-key")
                         .content("{\"input\":\"2+3\"}"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isForbidden());
     }
 
     @Test

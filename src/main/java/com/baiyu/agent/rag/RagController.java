@@ -1,14 +1,18 @@
 package com.baiyu.agent.rag;
 
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/rag")
+@ConditionalOnProperty(name = "legacy.rag.enabled", havingValue = "true")
 public class RagController {
 
     private static final int MAX_CONTENT_LENGTH = 500_000;

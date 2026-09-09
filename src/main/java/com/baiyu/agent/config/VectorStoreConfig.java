@@ -1,6 +1,5 @@
 package com.baiyu.agent.config;
 
-import io.qdrant.client.QdrantClient;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -31,10 +30,12 @@ public class VectorStoreConfig {
     @ConditionalOnProperty(name = "agent.storage.vector-store", havingValue = "qdrant")
     public VectorStore qdrantVectorStore(
             EmbeddingModel embeddingModel,
-            QdrantClient qdrantClient,
-            @Value("${spring.ai.vectorstore.qdrant.collection-name:kb_chunks}") String collectionName) {
+            io.qdrant.client.QdrantClient qdrantClient,
+            @Value("${spring.ai.vectorstore.qdrant.collection-name:kb_chunks}") String collectionName,
+            @Value("${spring.ai.vectorstore.qdrant.initialize-schema:false}") boolean initializeSchema) {
         return QdrantVectorStore.builder(qdrantClient, embeddingModel)
                 .collectionName(collectionName)
+                .initializeSchema(initializeSchema)
                 .build();
     }
 

@@ -482,10 +482,19 @@ function showToast(msg,type=''){
   setTimeout(()=>t.remove(),3000);
 }
 
+function escapeHtml(str){
+  if(str==null)return '';
+  return String(str)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#039;');
+}
+
 function renderMarkdown(text){
   if(!text)return '';
-  let html=text
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  let html=escapeHtml(text)
     .replace(/```(\w*)\n?([\s\S]*?)```/g,(m,lang,code)=>'<pre><code>'+code.trim()+'</code></pre>')
     .replace(/`([^`]+)`/g,'<code>$1</code>')
     .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
@@ -502,7 +511,7 @@ function addMessage(role,content,meta){
   let html='';
   if(meta)html+='<div class="meta">'+meta+'</div>';
   if(role==='assistant')html+=renderMarkdown(content||'空回复');
-  else html+=(content||'空回复').replace(/\n/g,'<br>');
+  else html+=escapeHtml(content||'空回复').replace(/\n/g,'<br>');
   div.innerHTML=html;
   document.getElementById('messages').appendChild(div);
   document.getElementById('chatWrap').scrollTo({top:document.getElementById('chatWrap').scrollHeight,behavior:'smooth'});
@@ -817,7 +826,7 @@ async function loadTools(){
     tools.forEach(t=>{
       const card=document.createElement('div');
       card.className='tool-card';
-      card.innerHTML='<div class="name">'+t.name+'</div><div class="desc">'+t.description+'</div><div class="tool-test"><input placeholder="输入参数..." data-tool="'+t.name+'"><button>执行</button></div>';
+      card.innerHTML='<div class="name">'+escapeHtml(t.name)+'</div><div class="desc">'+escapeHtml(t.description)+'</div><div class="tool-test"><input placeholder="输入参数..." data-tool="'+escapeHtml(t.name)+'"><button>执行</button></div>';
       card.querySelector('button').addEventListener('click',function(){testTool(t.name,this);});
       list.appendChild(card);
     });
@@ -832,7 +841,7 @@ async function testTool(name,btn){
   try{
     const res=await apiFetch('/api/tools/'+name,{method:'POST',body:JSON.stringify({input:val})});
     const data=await res.json();
-    addMessage('assistant','<strong>工具 '+name+'("'+val+'")</strong><br><pre><code>'+(data.result||'')+'</code></pre>','工具结果');
+    addMessage('assistant','<strong>工具 '+escapeHtml(name)+'("'+escapeHtml(val)+'")</strong><br><pre><code>'+escapeHtml(data.result||'')+'</code></pre>','工具结果');
   }catch(err){showToast('执行失败: '+err.message,'error');}
   finally{btn.textContent='执行';btn.disabled=false;}
 }
