@@ -159,6 +159,22 @@ class KnowledgeBaseServiceTest {
     }
 
     @Test
+    void searchChunksFallsBackToDatabaseWhenVectorStoreIsEmpty() {
+        Chunk persisted = new Chunk("ver-001", "space-001", "doc-001",
+                "Java virtual threads are useful for IO-bound workloads", 0);
+        persisted.setId("chunk-persisted");
+        when(vectorStore.similaritySearch(any(org.springframework.ai.vectorstore.SearchRequest.class)))
+                .thenReturn(List.of());
+        when(chunkRepo.findBySpaceIdAndEnabledTrue("space-001"))
+                .thenReturn(List.of(persisted));
+
+        List<Chunk> results = kbService.searchChunks("space-001", "Java threads", 5);
+
+        assertFalse(results.isEmpty());
+        assertEquals("chunk-persisted", results.get(0).getId());
+    }
+
+    @Test
     void uploadEmptyFileFails() {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "empty.txt", "text/plain", new byte[0]);

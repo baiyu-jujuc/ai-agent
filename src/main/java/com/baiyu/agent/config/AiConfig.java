@@ -47,10 +47,10 @@ public class AiConfig {
     @Value("${spring.ai.openai.embedding.options.model:text-embedding-3-small}")
     private String embeddingModel;
 
-    @Value("${spring.ai.embedding.api-key:${DEEPSEEK_API_KEY:}}")
+    @Value("${spring.ai.openai.embedding.api-key:${DEEPSEEK_API_KEY:}}")
     private String embeddingApiKey;
 
-    @Value("${spring.ai.embedding.base-url:${spring.ai.openai.base-url:https://api.deepseek.com}}")
+    @Value("${spring.ai.openai.embedding.base-url:https://api.openai.com}")
     private String embeddingBaseUrl;
 
     @Value("${agent.timeout-seconds:60}")

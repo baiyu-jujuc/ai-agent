@@ -177,6 +177,11 @@ public class KnowledgeBaseService {
                     .build();
 
             List<org.springframework.ai.document.Document> results = vectorStore.similaritySearch(request);
+            if (results == null || results.isEmpty()) {
+                // MySQL keeps chunks across restarts, while the in-process vector store
+                // starts empty. Fall back to persisted chunks instead of returning no answer.
+                return searchChunksFromDb(spaceId, query, topK);
+            }
             return results.stream()
                     .map(doc -> chunkFromDocument(doc))
                     .filter(Objects::nonNull)

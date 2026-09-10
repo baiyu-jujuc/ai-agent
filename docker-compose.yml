@@ -6,29 +6,60 @@ services:
     environment:
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-sk-placeholder}
       - AGENT_API_KEY=${AGENT_API_KEY:-dev-key-change-in-production}
+      - ALLOW_CLIENT_MODEL_KEY=${ALLOW_CLIENT_MODEL_KEY:-false}
+      - JWT_SECRET=${JWT_SECRET:-default-jwt-secret-change-in-production-at-least-32-chars}
       - VECTOR_STORE_TYPE=${VECTOR_STORE_TYPE:-memory}
+      - AUTOCONFIG_EXCLUDE=${AUTOCONFIG_EXCLUDE:-org.springframework.ai.vectorstore.qdrant.autoconfigure.QdrantVectorStoreAutoConfiguration}
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
       - QDRANT_INIT_SCHEMA=${QDRANT_INIT_SCHEMA:-false}
       - EMBEDDING_API_KEY=${EMBEDDING_API_KEY:-}
       - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL:-https://api.openai.com}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
-      - MEMORY_TYPE=${MEMORY_TYPE:-memory}
+      - MEMORY_TYPE=${MEMORY_TYPE:-redis}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_HEALTH=true
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-ai_agent}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+      - SPRING_DATASOURCE_USERNAME=${MYSQL_USER:-ai_agent}
+      - SPRING_DATASOURCE_PASSWORD=${MYSQL_PASSWORD:-ai_agent_demo_password}
+      - SPRING_DATASOURCE_DRIVER_CLASS_NAME=com.mysql.cj.jdbc.Driver
       - H2_CONSOLE=false
     depends_on:
-      - qdrant
-      - redis
+      mysql:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    networks:
+      - agent-network
+    restart: unless-stopped
+
+  mysql:
+    image: docker.m.daocloud.io/library/mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ai_agent}
+      MYSQL_USER: ${MYSQL_USER:-ai_agent}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ai_agent_demo_password}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_demo_password}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u$$MYSQL_USER -p$$MYSQL_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
     networks:
       - agent-network
     restart: unless-stopped
 
   qdrant:
     image: docker.m.daocloud.io/qdrant/qdrant:latest
-    ports:
-      - "6333:6333"
-      - "6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     networks:
@@ -37,19 +68,25 @@ services:
 
   redis:
     image: docker.m.daocloud.io/library/redis:7-alpine
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
     networks:
       - agent-network
     restart: unless-stopped
 
 volumes:
+  mysql_data:
   qdrant_data:
   redis_data:
 
 networks:
   agent-network:
     driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: ${DOCKER_NETWORK_MTU:-1400}

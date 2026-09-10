@@ -193,6 +193,22 @@ body{font-family:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-s
 .doc-item-status.ready{background:var(--green-bg);color:var(--green)}
 .doc-item-status.failed{background:var(--red-bg);color:var(--red)}
 .doc-item-time{font-size:11px;color:var(--text-lighter);margin-left:10px;flex-shrink:0}
+.doc-item-main{display:flex;align-items:center;min-width:0;flex:1}
+.doc-version-btn{padding:4px 8px;margin-left:10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text-dim);font-size:11px;font-family:inherit;cursor:pointer;flex-shrink:0}
+.doc-version-btn:hover{color:var(--accent);border-color:var(--accent);background:var(--accent-bg)}
+.version-panel{display:none;margin-top:14px;border-top:1px solid var(--border);padding-top:12px}
+.version-panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.version-panel-title{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.version-back-btn{padding:4px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text-dim);font-size:11px;font-family:inherit;cursor:pointer}
+.version-list{max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-sm)}
+.version-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-bottom:1px solid var(--border-light);font-size:12px}
+.version-row:last-child{border-bottom:none}
+.version-info{display:flex;align-items:center;gap:8px;min-width:0}
+.version-no{font-weight:600;color:var(--text);flex-shrink:0}
+.version-meta{color:var(--text-lighter);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.version-active{color:var(--green);font-size:11px;flex-shrink:0}
+.version-rollback-btn{padding:4px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text-dim);font-size:11px;font-family:inherit;cursor:pointer;flex-shrink:0}
+.version-rollback-btn:hover{color:var(--accent);border-color:var(--accent);background:var(--accent-bg)}
 
 /* Citation expand */
 .citation-ref{display:inline-block;min-width:18px;height:18px;line-height:18px;text-align:center;background:var(--accent-bg);color:var(--accent);font-size:11px;border-radius:4px;margin:0 2px;cursor:pointer;vertical-align:baseline;font-weight:600;transition:all .15s;padding:0 4px}
@@ -419,6 +435,15 @@ body{font-family:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-s
       </div>
       <div class="doc-list" id="docList">
         <div class="doc-list-empty">暂无文档</div>
+      </div>
+    </div>
+    <div class="version-panel" id="versionPanel">
+      <div class="version-panel-head">
+        <div class="version-panel-title" id="versionPanelTitle">版本历史</div>
+        <button class="version-back-btn" id="versionBackBtn">返回文档列表</button>
+      </div>
+      <div class="version-list" id="versionList">
+        <div class="doc-list-empty">加载中...</div>
       </div>
     </div>
     <div class="modal-actions">
@@ -999,16 +1024,74 @@ async function loadDocList(){
       const statusClass=d.status==='ready'?'ready':d.status==='failed'?'failed':'indexing';
       const statusText=d.status==='ready'?'已就绪':d.status==='failed'?'失败':'索引中';
       const timeStr=d.createdAt?new Date(d.createdAt).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+      const filename=d.filename||d.fileName||d.name||'未知文件';
       item.innerHTML=
-        '<span class="doc-item-name" title="'+(d.name||d.fileName||'')+'">'+(d.name||d.fileName||'未知文件')+'</span>'+
-        '<span class="doc-item-status '+statusClass+'">'+statusText+'</span>'+
-        '<span class="doc-item-time">'+timeStr+'</span>';
+        '<div class="doc-item-main">'+
+          '<span class="doc-item-name" title="'+escapeHtml(filename)+'">'+escapeHtml(filename)+'</span>'+
+          '<span class="doc-item-status '+statusClass+'">'+statusText+'</span>'+
+          '<span class="doc-item-time">'+timeStr+'</span>'+
+        '</div>'+
+        '<button class="doc-version-btn" data-doc-id="'+escapeHtml(d.id)+'" data-doc-name="'+escapeHtml(filename)+'">版本</button>';
       listEl.appendChild(item);
+    });
+    listEl.querySelectorAll('.doc-version-btn').forEach(btn=>{
+      btn.addEventListener('click',()=>loadDocVersions(btn.dataset.docId,btn.dataset.docName));
     });
   }catch(e){
     listEl.innerHTML='<div class="doc-list-empty">加载失败</div>';
   }
 }
+
+async function loadDocVersions(documentId,filename){
+  const panel=document.getElementById('versionPanel');
+  const listEl=document.getElementById('versionList');
+  document.getElementById('versionPanelTitle').textContent=filename+' · 版本历史';
+  panel.style.display='block';
+  listEl.innerHTML='<div class="doc-list-empty">加载中...</div>';
+  try{
+    const res=await apiFetch('/api/kb/documents/'+encodeURIComponent(documentId)+'/versions');
+    const versions=await res.json();
+    if(!versions.length){
+      listEl.innerHTML='<div class="doc-list-empty">暂无版本记录</div>';
+      return;
+    }
+    listEl.innerHTML='';
+    versions.forEach(v=>{
+      const row=document.createElement('div');
+      row.className='version-row';
+      const timeStr=v.createdAt?new Date(v.createdAt).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+      const action=v.active
+        ?'<span class="version-active">当前版本</span>'
+        :'<button class="version-rollback-btn" data-version="'+v.versionNo+'">回滚到此版本</button>';
+      row.innerHTML=
+        '<div class="version-info">'+
+          '<span class="version-no">v'+v.versionNo+'</span>'+
+          '<span class="version-meta">'+v.chunkCount+' 个分块 · '+timeStr+'</span>'+
+        '</div>'+action;
+      const rollbackBtn=row.querySelector('.version-rollback-btn');
+      if(rollbackBtn)rollbackBtn.addEventListener('click',()=>rollbackDocument(documentId,Number(rollbackBtn.dataset.version),filename));
+      listEl.appendChild(row);
+    });
+  }catch(e){
+    listEl.innerHTML='<div class="doc-list-empty">版本加载失败</div>';
+  }
+}
+
+async function rollbackDocument(documentId,versionNo,filename){
+  if(!confirm('确认将 '+filename+' 回滚到 v'+versionNo+' 吗？'))return;
+  try{
+    await apiFetch('/api/kb/documents/'+encodeURIComponent(documentId)+'/rollback/'+versionNo,{method:'POST'});
+    showToast('已回滚到 v'+versionNo,'success');
+    await loadDocVersions(documentId,filename);
+    await loadDocList();
+  }catch(e){
+    showToast('回滚失败','error');
+  }
+}
+
+document.getElementById('versionBackBtn').addEventListener('click',()=>{
+  document.getElementById('versionPanel').style.display='none';
+});
 
 /* Settings modal */
 document.getElementById('settingsBtn').addEventListener('click',()=>{

@@ -68,7 +68,7 @@
        └──────┬──────┘  └───┬────┘  └────┬────┘  └───────┬────────┘
               │             │            │               │
         ┌─────▼─────────────▼────────────▼───────────────▼────┐
-        │  JPA(H2/PostgreSQL) · VectorStore · Redis · LLM    │
+        │  JPA(H2/MySQL) · VectorStore · Redis · LLM         │
         └──────────────────────────────────────────────────────┘
 ```
 
@@ -139,11 +139,31 @@ cp .env.example .env
 ### 5.2 Docker Compose
 
 ```bash
-export DEEPSEEK_API_KEY=your-key
+cp .env.example .env
+# 编辑 .env，至少填写 DEEPSEEK_API_KEY，并修改平台 Key / JWT / 数据库密码
 docker compose up -d --build
+docker compose ps
 ```
 
-Compose 默认保持 memory 模式可开箱运行，同时提供 Qdrant、Redis 服务供生产模式切换。
+Compose 会启动四类服务：
+
+| 服务 | 用途 | 是否映射到宿主机 |
+| --- | --- | --- |
+| `app` | Spring Boot 应用与 Web UI | 是，`8080` |
+| `mysql` | 用户、知识空间、文档、版本、消息、反馈持久化 | 否，仅容器网络 |
+| `redis` | 会话记忆与缓存 | 否，仅容器网络 |
+| `qdrant` | 生产向量索引服务 | 否，仅容器网络 |
+
+默认使用 MySQL 持久化元数据、Redis 保存会话记忆；向量检索使用内存模式，确保没有 Embedding Key 时仍能一键启动。需要 Qdrant 时按 5.5 切换。
+
+首次启动后可准备可重复演示数据并执行端到端验收：
+
+```powershell
+.\scripts\demo-prepare.ps1
+.\scripts\demo-smoke.ps1
+```
+
+完整录屏脚本见 `docs/demo-recording-script.md`，云服务器部署见 `docs/cloud-deployment.md`。面向旅游 OTA 场景的逐步执行方案见 `docs/demo-travel-ota-execution-plan.md`。
 
 ### 5.3 API Key 双模式说明
 
@@ -187,8 +207,11 @@ export EMBEDDING_BASE_URL=https://api.openai.com
 export EMBEDDING_MODEL=text-embedding-3-small
 export QDRANT_HOST=localhost
 export QDRANT_PORT=6333
+export QDRANT_INIT_SCHEMA=true
 ./mvnw spring-boot:run
 ```
+
+使用 `docker compose` 时，Compose 已将 `QDRANT_HOST` 设置为容器网络内的 `qdrant`，无需在 `.env` 中改成主机名。
 
 - Qdrant 模式下，Spring AI 自动配置创建 `QdrantClient` Bean。
 - 文档上传/回滚时，向量按版本删除和重建，旧版本不污染检索结果。
@@ -323,8 +346,11 @@ curl -X POST http://localhost:8080/api/chat/orchestrate \
 | `DEEPSEEK_API_KEY` | 必填 | 模型服务 API Key（服务端环境变量） |
 | `AGENT_API_KEY` | `dev-key-change-in-production` | 平台 API Key |
 | `SERVER_PORT` | `8080` | 服务端口 |
+| `SPRING_DATASOURCE_URL` | H2 内存库 | JDBC 地址；Compose 使用 MySQL |
+| `MYSQL_DATABASE` / `MYSQL_USER` / `MYSQL_PASSWORD` | `ai_agent` 等 | Compose 数据库初始化参数 |
 | `VECTOR_STORE_TYPE` | `memory` | `memory` / `qdrant` |
-| `MEMORY_TYPE` | `memory` | `memory` / `redis` |
+| `MEMORY_TYPE` | `memory` | `memory` / `redis`；Compose 默认 `redis` |
+| `DOCKER_NETWORK_MTU` | `1400` | Docker 网络 MTU；兼容 WSL/VPN，避免模型 API TLS 超时 |
 | `EMBEDDING_API_KEY` | 空 | 生产向量模式所需 Embedding Key |
 | `EMBEDDING_BASE_URL` | `https://api.openai.com` | Embedding 服务地址 |
 | `EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding 模型 |
@@ -417,10 +443,16 @@ curl -X POST http://localhost:8080/api/chat/orchestrate \
 3. **配置 API Key**：点击齿轮图标，确认平台访问 Key 为 `dev-key-change-in-production`
 4. **创建知识空间**：点击"创建空间"按钮，输入名称和描述
 5. **上传文档**：选择知识空间后，点击文档图标，拖拽或选择 TXT/Markdown/PDF 文件上传
-6. **提问**：在知识空间下拉框选择空间后，在输入框提问
-7. **查看引用**：回答中引用以 `[1]` 编号显示，点击可展开原文片段、文件名和版本号
-8. **反馈**：点击"有帮助"或"没帮助"对回答进行评价
-9. **查看历史**：系统自动持久化对话消息，按会话隔离
+6. **查看版本**：在文档列表中点击"版本"，查看版本历史；管理员可回滚到旧版本
+7. **提问**：在知识空间下拉框选择空间后，在输入框提问
+8. **查看引用**：回答中引用以 `[1]` 编号显示，点击可展开原文片段、文件名、版本号和相似度
+9. **多轮追问**：继续追问，系统按空间和会话保留最近上下文
+10. **反馈**：点击"有用"或"没用"对回答进行评价
+11. **权限验证**：用普通成员访问未授权空间，接口返回 403
+
+推荐使用 `docs/demo-data` 中的脱敏业务文档完成完整演示；`scripts/demo-smoke.ps1` 会自动检查上述关键链路。
+
+旅游行业演示数据可通过 `scripts/demo-prepare-travel.ps1` 自动准备，并通过 `scripts/demo-smoke-travel.ps1` 验证退改制度 v1/v2 回滚、引用切换、多轮问答和空间权限拒绝。所有旅游制度和数字均为虚构数据，法规摘要保留政府公开原文链接。
 
 ---
 
