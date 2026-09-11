@@ -109,6 +109,15 @@ wsl -d Debian -- bash -lc 'cd "/mnt/d/AI Agent (test)" && docker compose ps'
 
 该脚本会验证 v2 引用、多轮追问、反馈、回滚到 v1 后的引用切换，以及普通账号访问管理员空间返回 403。
 
+如果当前终端是 Windows PowerShell 5.1，或系统 PATH 中没有 `pwsh.exe`，可以直接使用兼容启动器：
+
+```powershell
+cd "D:\AI Agent (test)"
+.\scripts\run-demo-travel.ps1
+```
+
+启动器会自动定位 PowerShell 7，执行数据准备和旅游场景验收，不需要手工调用 `pwsh.exe`。
+
 如果希望把旅游行业文档设为演示主数据，可以在脚本执行后登录管理员账号，在“研发知识库”或新建的“客服政策知识库”中上传：
 
 1. `regulatory-baseline.md`

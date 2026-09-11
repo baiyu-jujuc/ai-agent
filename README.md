@@ -454,6 +454,8 @@ curl -X POST http://localhost:8080/api/chat/orchestrate \
 
 旅游行业演示数据可通过 `scripts/demo-prepare-travel.ps1` 自动准备，并通过 `scripts/demo-smoke-travel.ps1` 验证退改制度 v1/v2 回滚、引用切换、多轮问答和空间权限拒绝。所有旅游制度和数字均为虚构数据，法规摘要保留政府公开原文链接。
 
+Windows PowerShell 5.1 用户可直接运行 `scripts/run-demo-travel.ps1`。启动器会自动定位 PowerShell 7，并依次执行旅游数据准备和完整验收。
+
 ---
 
 ## 12. 项目结构
