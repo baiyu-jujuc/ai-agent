@@ -213,6 +213,10 @@ public class KnowledgeBaseController {
         m.put("status", d.getStatus());
         m.put("creatorId", d.getCreatorId());
         m.put("createdAt", d.getCreatedAt() != null ? d.getCreatedAt().toString() : null);
+        List<DocumentVersion> versions = kbService.getDocumentVersions(d.getId());
+        DocumentVersion activeVersion = versions.stream().filter(DocumentVersion::isActive).findFirst().orElse(null);
+        m.put("activeVersionNo", activeVersion != null ? activeVersion.getVersionNo() : null);
+        m.put("versionCount", versions.size());
         return m;
     }
 

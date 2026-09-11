@@ -193,6 +193,8 @@ body{font-family:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-s
 .doc-item-status.ready{background:var(--green-bg);color:var(--green)}
 .doc-item-status.failed{background:var(--red-bg);color:var(--red)}
 .doc-item-time{font-size:11px;color:var(--text-lighter);margin-left:10px;flex-shrink:0}
+.doc-version-tag{padding:2px 7px;border-radius:4px;background:var(--accent-bg);color:var(--accent);font-size:11px;font-weight:600;flex-shrink:0}
+.doc-version-count{font-size:11px;color:var(--text-lighter);flex-shrink:0}
 .doc-item-main{display:flex;align-items:center;min-width:0;flex:1}
 .doc-version-btn{padding:4px 8px;margin-left:10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text-dim);font-size:11px;font-family:inherit;cursor:pointer;flex-shrink:0}
 .doc-version-btn:hover{color:var(--accent);border-color:var(--accent);background:var(--accent-bg)}
@@ -460,6 +462,15 @@ let useTools=false;
 let useStream=false;
 let selectedModel='deepseek-v4-flash';
 let selectedSpace='';
+const TOOL_DISPLAY={
+  calculator:{name:'计算器',description:'计算数学表达式，例如 2+3*4、(1+2)*3、2^10。'},
+  file:{name:'文件操作',description:'在工作目录内读取、写入或列出文件。'},
+  http:{name:'HTTP 请求',description:'发送受安全保护的 HTTP GET 请求，并返回响应摘要。'},
+  systeminfo:{name:'系统信息',description:'查看操作系统、Java 版本和运行状态。'},
+  time:{name:'当前时间',description:'获取服务器当前日期和时间，无需输入参数。'},
+  weather:{name:'天气查询',description:'查询指定城市天气，例如北京、上海、南京。'},
+  'web-search':{name:'网络搜索',description:'搜索网络信息并返回相关结果摘要。'}
+};
 
 function getBaseUrl(){return(localStorage.getItem('serverUrl')||'http://localhost:8080').replace(/\/$/,'');}
 function getApiKey(){return(localStorage.getItem('agentApiKey')||'dev-key-change-in-production').trim();}
@@ -556,7 +567,26 @@ function addTypingIndicator(){
 /* Top bar controls */
 document.getElementById('modelSelect').addEventListener('change',e=>selectedModel=e.target.value);
 document.getElementById('agentSelect').addEventListener('change',e=>selectedAgent=e.target.value);
-document.getElementById('kbSpaceSelect').addEventListener('change',e=>selectedSpace=e.target.value);
+document.getElementById('kbSpaceSelect').addEventListener('change',e=>{
+  const nextSpace=e.target.value;
+  if(nextSpace===selectedSpace)return;
+  selectedSpace=nextSpace;
+  startNewConversation();
+});
+
+function startNewConversation(){
+  const messages=document.getElementById('messages');
+  messages.innerHTML='';
+  if(selectedSpace){
+    spaceConversations[selectedSpace]='kb-'+selectedSpace+'-'+Date.now();
+    const sel=document.getElementById('kbSpaceSelect');
+    const spaceName=sel.options[sel.selectedIndex]?sel.options[sel.selectedIndex].text:'知识空间';
+    addMessage('assistant','已切换到「'+spaceName+'」，这是新的会话。','知识库助手');
+  }else{
+    conversationId='session-'+Date.now();
+    addMessage('assistant','已进入默认对话，这是新的会话。','知识库助手');
+  }
+}
 
 document.getElementById('toolsBtn').addEventListener('click',e=>{
   useTools=!useTools;
@@ -651,6 +681,9 @@ document.getElementById('logoutBtn').addEventListener('click',()=>{
   localStorage.removeItem('currentUser');
   updateAuthUI();
   showToast('已退出登录','success');
+  selectedSpace='';
+  document.getElementById('kbSpaceSelect').value='';
+  startNewConversation();
   loadKnowledgeSpaces();
 });
 
@@ -849,9 +882,10 @@ async function loadTools(){
     list.innerHTML='';
     if(!tools.length){list.innerHTML='<div style="color:var(--text-lighter);font-size:12px;padding:8px">暂无工具</div>';return;}
     tools.forEach(t=>{
+      const display=TOOL_DISPLAY[t.name]||{name:t.name,description:t.description};
       const card=document.createElement('div');
       card.className='tool-card';
-      card.innerHTML='<div class="name">'+escapeHtml(t.name)+'</div><div class="desc">'+escapeHtml(t.description)+'</div><div class="tool-test"><input placeholder="输入参数..." data-tool="'+escapeHtml(t.name)+'"><button>执行</button></div>';
+      card.innerHTML='<div class="name">'+escapeHtml(display.name)+'</div><div class="desc">'+escapeHtml(display.description)+'</div><div class="tool-test"><input placeholder="输入参数..." data-tool="'+escapeHtml(t.name)+'"><button>执行</button></div>';
       card.querySelector('button').addEventListener('click',function(){testTool(t.name,this);});
       list.appendChild(card);
     });
@@ -937,6 +971,7 @@ document.getElementById('doCreateSpaceBtn').addEventListener('click',async()=>{
     if(data&&data.id){
       document.getElementById('kbSpaceSelect').value=data.id;
       selectedSpace=data.id;
+      startNewConversation();
     }
   }catch(err){/* apiFetch already shows toast */}
   finally{btn.disabled=false;btn.textContent='创建';}
@@ -1025,9 +1060,13 @@ async function loadDocList(){
       const statusText=d.status==='ready'?'已就绪':d.status==='failed'?'失败':'索引中';
       const timeStr=d.createdAt?new Date(d.createdAt).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
       const filename=d.filename||d.fileName||d.name||'未知文件';
+      const versionTag=d.activeVersionNo?'<span class="doc-version-tag">当前 v'+escapeHtml(d.activeVersionNo)+'</span>':'';
+      const versionCount=d.versionCount>1?'<span class="doc-version-count">共 '+escapeHtml(d.versionCount)+' 版</span>':'';
       item.innerHTML=
         '<div class="doc-item-main">'+
           '<span class="doc-item-name" title="'+escapeHtml(filename)+'">'+escapeHtml(filename)+'</span>'+
+          versionTag+
+          versionCount+
           '<span class="doc-item-status '+statusClass+'">'+statusText+'</span>'+
           '<span class="doc-item-time">'+timeStr+'</span>'+
         '</div>'+
@@ -1063,9 +1102,10 @@ async function loadDocVersions(documentId,filename){
       const action=v.active
         ?'<span class="version-active">当前版本</span>'
         :'<button class="version-rollback-btn" data-version="'+v.versionNo+'">回滚到此版本</button>';
+      const versionLabel=v.active?'v'+v.versionNo+' · 当前生效':'v'+v.versionNo+' · 历史版本';
       row.innerHTML=
         '<div class="version-info">'+
-          '<span class="version-no">v'+v.versionNo+'</span>'+
+          '<span class="version-no">'+versionLabel+'</span>'+
           '<span class="version-meta">'+v.chunkCount+' 个分块 · '+timeStr+'</span>'+
         '</div>'+action;
       const rollbackBtn=row.querySelector('.version-rollback-btn');
