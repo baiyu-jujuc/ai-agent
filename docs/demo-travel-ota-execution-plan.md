@@ -122,12 +122,14 @@ cd "D:\AI Agent (test)"
 
 ```powershell
 .\scripts\run-demo-travel.ps1 `
-  -AdminUsername "resume_admin" -AdminPassword "ResumeAdmin123!" `
-  -ReaderUsername "resume_reader" -ReaderPassword "ResumeReader123!" `
+  -AdminUsername "admin" -AdminPassword "123456" `
+  -ReaderUsername "reader" -ReaderPassword "123456" `
   -SpaceName "旅游客服政策知识库（简历演示）"
 ```
 
 脚本只会创建新账号或复用同名且密码一致的账号，不会修改已经存在账号的密码。需要更换密码时，请改用新的用户名，或者清理演示数据库后重新执行准备脚本。
+
+`admin / 123456` 和 `reader / 123456` 只用于本地录屏演示。公网部署前必须改为强密码，避免任何人直接登录演示环境。
 
 如果希望把旅游行业文档设为演示主数据，可以在脚本执行后登录管理员账号，在“研发知识库”或新建的“客服政策知识库”中上传：
 

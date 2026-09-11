@@ -37,8 +37,10 @@ wsl -d Debian -- bash -lc 'cd "/mnt/d/AI Agent (test)" && docker compose ps'
 
 | 角色 | 用户名 | 密码 | 用途 |
 | --- | --- | --- | --- |
-| 管理员 | `demo_admin` | `Admin123!` | 创建空间、上传文档、回滚、问答 |
-| 普通成员 | `demo_reader` | `Reader123!` | 只读成员；验证无权限空间会返回 403 |
+| 管理员 | `admin` | `123456` | 创建空间、上传文档、回滚、问答 |
+| 普通成员 | `reader` | `123456` | 只读成员；验证无权限空间会返回 403 |
+
+> `123456` 仅用于本地录屏和面试展示。部署到公网前必须更换为强密码，并同步修改平台访问 Key。
 
 演示数据：
 
@@ -80,7 +82,7 @@ wsl -d Debian -- bash -lc 'cd "/mnt/d/AI Agent (test)" && docker compose ps'
 
 ### 00:15-00:35 登录与知识空间
 
-画面：使用 `demo_admin` 登录，顶部选择“产品研发知识库（演示）”。
+画面：使用 `admin` 登录，顶部选择“产品研发知识库（演示）”。
 
 口播：系统不是单会话聊天 Demo，而是以知识空间为隔离边界。普通账号只能看到被授权空间，管理员负责成员和文档管理。
 
@@ -110,7 +112,7 @@ wsl -d Debian -- bash -lc 'cd "/mnt/d/AI Agent (test)" && docker compose ps'
 
 ### 02:20-02:40 权限校验与测试结果
 
-画面：退出管理员，登录 `demo_reader`，尝试访问“管理员专属”空间，显示无权限或 403；切到 GitHub Actions，展示测试全绿。
+画面：退出管理员，登录 `reader`，尝试访问“管理员专属”空间，显示无权限或 403；切到 GitHub Actions，展示测试全绿。
 
 口播：权限不仅控制页面显示，服务端每个知识库接口都会执行 canRead、canWrite 或 canAdmin 校验，避免前端绕过。
 

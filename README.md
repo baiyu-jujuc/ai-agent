@@ -460,8 +460,8 @@ Windows PowerShell 5.1 用户可直接运行 `scripts/run-demo-travel.ps1`。启
 
 ```powershell
 .\scripts\run-demo-travel.ps1 `
-  -AdminUsername "resume_admin" -AdminPassword "ResumeAdmin123!" `
-  -ReaderUsername "resume_reader" -ReaderPassword "ResumeReader123!" `
+  -AdminUsername "admin" -AdminPassword "123456" `
+  -ReaderUsername "reader" -ReaderPassword "123456" `
   -SpaceName "旅游客服政策知识库（简历演示）"
 ```
 

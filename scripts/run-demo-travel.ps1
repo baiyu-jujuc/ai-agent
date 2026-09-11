@@ -1,10 +1,10 @@
 param(
     [string]$BaseUrl = "http://localhost:8080",
     [string]$PlatformApiKey = "dev-key-change-in-production",
-    [string]$AdminUsername = "demo_admin",
-    [string]$AdminPassword = "Admin123!",
-    [string]$ReaderUsername = "demo_reader",
-    [string]$ReaderPassword = "Reader123!",
+    [string]$AdminUsername = "admin",
+    [string]$AdminPassword = "123456",
+    [string]$ReaderUsername = "reader",
+    [string]$ReaderPassword = "123456",
     [string]$SpaceName = ""
 )
 
