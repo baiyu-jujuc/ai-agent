@@ -1,6 +1,11 @@
 param(
     [string]$BaseUrl = "http://localhost:8080",
-    [string]$PlatformApiKey = "dev-key-change-in-production"
+    [string]$PlatformApiKey = "dev-key-change-in-production",
+    [string]$AdminUsername = "demo_admin",
+    [string]$AdminPassword = "Admin123!",
+    [string]$ReaderUsername = "demo_reader",
+    [string]$ReaderPassword = "Reader123!",
+    [string]$SpaceName = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,11 +28,36 @@ if (-not $pwsh) {
 
 $prepare = Join-Path $PSScriptRoot "demo-prepare-travel.ps1"
 $smoke = Join-Path $PSScriptRoot "demo-smoke-travel.ps1"
+$common = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File")
+$argsForPrepare = $common + @(
+    $prepare,
+    "-BaseUrl", $BaseUrl,
+    "-PlatformApiKey", $PlatformApiKey,
+    "-AdminUsername", $AdminUsername,
+    "-AdminPassword", $AdminPassword,
+    "-ReaderUsername", $ReaderUsername,
+    "-ReaderPassword", $ReaderPassword
+)
+if ($SpaceName) {
+    $argsForPrepare += @("-SpaceName", $SpaceName)
+}
+$argsForSmoke = $common + @(
+    $smoke,
+    "-BaseUrl", $BaseUrl,
+    "-PlatformApiKey", $PlatformApiKey,
+    "-AdminUsername", $AdminUsername,
+    "-AdminPassword", $AdminPassword,
+    "-ReaderUsername", $ReaderUsername,
+    "-ReaderPassword", $ReaderPassword
+)
+if ($SpaceName) {
+    $argsForSmoke += @("-SpaceName", $SpaceName)
+}
 
-& $pwsh -NoProfile -ExecutionPolicy Bypass -File $prepare -BaseUrl $BaseUrl -PlatformApiKey $PlatformApiKey
+& $pwsh @argsForPrepare
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-& $pwsh -NoProfile -ExecutionPolicy Bypass -File $smoke -BaseUrl $BaseUrl -PlatformApiKey $PlatformApiKey
+& $pwsh @argsForSmoke
 exit $LASTEXITCODE

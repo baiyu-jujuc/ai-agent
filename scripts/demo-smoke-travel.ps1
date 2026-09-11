@@ -6,7 +6,8 @@ param(
     [string]$AdminUsername = "demo_admin",
     [string]$AdminPassword = "Admin123!",
     [string]$ReaderUsername = "demo_reader",
-    [string]$ReaderPassword = "Reader123!"
+    [string]$ReaderPassword = "Reader123!",
+    [string]$SpaceName = "旅游客服政策知识库（演示）"
 )
 
 $ErrorActionPreference = "Stop"
@@ -59,7 +60,8 @@ function Assert-True {
 Write-Host "[1/6] 准备旅游行业演示数据..." -ForegroundColor Cyan
 $prepared = & "$PSScriptRoot/demo-prepare-travel.ps1" -BaseUrl $BaseUrl -PlatformApiKey $PlatformApiKey `
     -AdminUsername $AdminUsername -AdminPassword $AdminPassword `
-    -ReaderUsername $ReaderUsername -ReaderPassword $ReaderPassword
+    -ReaderUsername $ReaderUsername -ReaderPassword $ReaderPassword `
+    -SpaceName $SpaceName
 
 $admin = Invoke-DemoRequest -Method POST -Path "/api/auth/login" -Body @{
     username = $AdminUsername; password = $AdminPassword

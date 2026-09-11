@@ -456,6 +456,15 @@ curl -X POST http://localhost:8080/api/chat/orchestrate \
 
 Windows PowerShell 5.1 用户可直接运行 `scripts/run-demo-travel.ps1`。启动器会自动定位 PowerShell 7，并依次执行旅游数据准备和完整验收。
 
+自定义演示账号和空间：
+
+```powershell
+.\scripts\run-demo-travel.ps1 `
+  -AdminUsername "resume_admin" -AdminPassword "ResumeAdmin123!" `
+  -ReaderUsername "resume_reader" -ReaderPassword "ResumeReader123!" `
+  -SpaceName "旅游客服政策知识库（简历演示）"
+```
+
 ---
 
 ## 12. 项目结构
