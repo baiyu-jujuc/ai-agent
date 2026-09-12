@@ -222,6 +222,25 @@ export QDRANT_INIT_SCHEMA=true
 - 无相关文档时仍能基于上下文回答"知识库中未找到"。
 - 前端按空间维护独立 `conversationId`，避免跨空间上下文串扰。
 
+### 5.7 Vue 前端工程（预留）
+
+仓库中的 `frontend/` 是独立的 Vue 3 + Vite + TypeScript 工程，已包含 Router、Pinia、Vitest、Playwright、ESLint 和 Prettier。当前知识库 Demo 仍使用 Spring Boot 内置静态页面，`frontend/` 暂不接入运行链路。
+
+```powershell
+cd frontend
+npm install
+npm run build
+npm run test:unit -- --run
+```
+
+需要开发 Vue 版本时再运行：
+
+```powershell
+npm run dev
+```
+
+工程通过 `.nvmrc` 固定 Node `22.16.0`，并使用项目级 `.npmrc`，不会修改全局 Node 或全局 npm 配置。
+
 ---
 
 ## 6. API 示例
