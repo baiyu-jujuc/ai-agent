@@ -42,7 +42,7 @@
 | 流式输出 | SSE 流式聊天与工具/Agent 单事件模式 | ✅ |
 | 用户鉴权 | JWT + Spring Security，注册/登录/获取当前用户，BCrypt 密码散列 | ✅ |
 | 文档上传 UI | 页面拖拽/选择上传、解析状态展示、版本列表、管理员回滚 | ✅ |
-| 引用与反馈 UI | 引用编号插入正文、点击展开原文片段、置信度 badge、点赞点踩 | ✅ |
+| 引用与反馈 UI | 引用编号插入正文、点击展开原文片段、置信度 badge、点赞点踩与补充反馈 | ✅ |
 | 页面模型 Key | `X-Model-API-Key` 全入口支持（chat/stream/agent/kb），`ChatModelFactory` per-request 安全注入，默认关闭 | ✅ |
 | Qdrant 生产模式 | Spring AI 自动配置 `QdrantClient`，版本化向量索引同步，内存模式零依赖 | ✅ |
 | 对话上下文隔离 | `conversationId` 隔离到用户 + 空间 + 会话，`KbMessage` 持久化 | ✅ |
@@ -372,7 +372,7 @@ curl -X POST http://localhost:8080/api/chat/orchestrate \
 ./mvnw clean verify --no-transfer-progress
 ```
 
-当前仓库包含 131 个自动化测试，覆盖：
+当前仓库包含 133 个自动化测试，覆盖：
 
 - ChatController 参数与状态码
 - KB 服务、KbQaService 问答、消息持久化与多轮上下文
@@ -409,7 +409,7 @@ curl -X POST http://localhost:8080/api/chat/orchestrate \
 - ✅ 浅色 DeepSeek 风格中文 Web UI
 - ✅ 模型注册、SSE、工具调用、多 Agent 编排（含执行轨迹）
 - ✅ GitHub Actions CI、Dockerfile、Compose、Maven Wrapper
-- ✅ 131 个自动化测试（不依赖外网 LLM）
+- ✅ 133 个自动化测试（不依赖外网 LLM）
 - ✅ 文档分块（中文单字分词 + 英文 token）、PDF/Markdown 读取
 - ✅ 文档版本管理与回滚（含向量索引同步）
 - ✅ 统一异常处理、Actuator 最小暴露
@@ -418,7 +418,7 @@ curl -X POST http://localhost:8080/api/chat/orchestrate \
 - ✅ 权限强制执行（canRead/canWrite/canAdmin 接入所有 KB API，资源归属校验）
 - ✅ 页面文档上传 UI（拖拽/选择上传、解析状态、版本列表、回滚）
 - ✅ 知识空间问答主链路打通（选空间 → /api/kb/spaces/{id}/ask）
-- ✅ 引用与反馈 UI（编号引用、点击展开原文、置信度 badge、点赞点踩）
+- ✅ 引用与反馈 UI（编号引用、点击展开原文、置信度 badge、点赞点踩和补充反馈）
 - ✅ 对话上下文隔离（conversationId 隔离到用户 + 空间 + 会话）
 - ✅ 消息持久化（KbMessage 实体，按会话查询历史）
 - ✅ 多轮上下文问答（历史消息进入 prompt，过滤失败回复）
