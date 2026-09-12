@@ -35,15 +35,13 @@
 | 分块索引 | 500 字符 / 100 重叠分块，中文与英文 token 化检索 | ✅ |
 | 知识问答 | `/api/kb/spaces/{spaceId}/ask`，返回 answer、citations、confidence、topScore | ✅ |
 | 引用溯源 | `Citation` 记录 message/document/version/chunk 与相似度，返回 `documentName`/`versionNo`/`content` | ✅ |
-| 用户反馈 | `Feedback` 支持 up/down、原因与人工纠正文本，前端点赞点踩 UI | ✅ |
+| 用户反馈 | `Feedback` 支持 up/down/comment、原因与人工纠正文本，前端提供点赞点踩和补充反馈 | ✅ |
 | 权限建模 | `SpaceMember` + `PermissionRule` + `PermissionService`，成员管理 API，所有 KB 接口强制 `canRead`/`canWrite`/`canAdmin` | ✅ |
-| 多 Agent / 工具 | Coordinator / Code / Research / Data / ReAct，以及 Spring AI `@Tool` 工具注册表 | ✅ |
 | 记忆 | 会话消息记录，内存与 Redis 两种实现，支持 token / 条数 / 会话淘汰 | ✅ |
-| 流式输出 | SSE 流式聊天与工具/Agent 单事件模式 | ✅ |
 | 用户鉴权 | JWT + Spring Security，注册/登录/获取当前用户，BCrypt 密码散列 | ✅ |
 | 文档上传 UI | 页面拖拽/选择上传、解析状态展示、版本列表、管理员回滚 | ✅ |
 | 引用与反馈 UI | 引用编号插入正文、点击展开原文片段、置信度 badge、点赞点踩与补充反馈 | ✅ |
-| 页面模型 Key | `X-Model-API-Key` 全入口支持（chat/stream/agent/kb），`ChatModelFactory` per-request 安全注入，默认关闭 | ✅ |
+| 页面模型 Key | `X-Model-API-Key` 支持普通对话和知识库问答，`ChatModelFactory` per-request 安全注入，默认关闭 | ✅ |
 | Qdrant 生产模式 | Spring AI 自动配置 `QdrantClient`，版本化向量索引同步，内存模式零依赖 | ✅ |
 | 对话上下文隔离 | `conversationId` 隔离到用户 + 空间 + 会话，`KbMessage` 持久化 | ✅ |
 
@@ -56,20 +54,21 @@
                          │   浅色 Web UI        │
                          │ 知识空间 / 模型 / 设置│
                          └──────────┬───────────┘
-                                    │ REST + SSE
-              ┌─────────────────────▼─────────────────────┐
-              │  Chat / Agent / RAG / KB API              │
-              └───┬──────────┬───────────┬───────────┬────┘
-                  │          │           │           │
-       ┌──────────▼──┐  ┌────▼───┐  ┌────▼────┐  ┌───▼────────────┐
-       │ KB Service  │  │KbQa    │  │ Agent   │  │ ToolRegistry   │
-       │ 空间/文档/   │  │引用+   │  │编排      │  │ Function       │
-       │ 版本/权限    │  │置信度   │  │         │  │ Calling        │
-       └──────┬──────┘  └───┬────┘  └────┬────┘  └───────┬────────┘
-              │             │            │               │
-        ┌─────▼─────────────▼────────────▼───────────────▼────┐
-        │  JPA(H2/MySQL) · VectorStore · Redis · LLM         │
-        └──────────────────────────────────────────────────────┘
+                                    │ REST
+                         ┌──────────▼──────────┐
+                         │  Chat / KB REST API │
+                         └───────┬───────┬─────┘
+                                 │       │
+                      ┌──────────▼──┐ ┌──▼──────────┐
+                      │ KB Service  │ │ KbQa Service│
+                      │ 空间/文档/   │ │ 检索/引用/   │
+                      │ 版本/权限    │ │ 置信度/反馈  │
+                      └──────┬──────┘ └──────┬──────┘
+                             │               │
+                    ┌────────▼───────────────▼────────┐
+                    │ JPA(H2/MySQL) · VectorStore ·   │
+                    │ Redis · LLM                     │
+                    └─────────────────────────────────┘
 ```
 
 ### 数据模型
@@ -90,10 +89,6 @@
 | 模块 | 说明 |
 | --- | --- |
 | `kb.*` | 知识空间、文档、版本、分块、权限、引用、反馈 |
-| `rag.*` | RAG 文本/PDF/Markdown 读取、分块与检索 |
-| `agent.*` | 专家 Agent 与意图路由 |
-| `orchestrator.*` | sequential / parallel 编排和 `TaskTrace` |
-| `tool.*` | `@Tool` 自动注册、工具列表和直接执行 |
 | `config.*` | AI 配置、模型注册、向量存储、安全、异常处理 |
 
 ---
@@ -110,7 +105,7 @@
 | 记忆 | InMemory / Redis |
 | 文档解析 | Spring AI Text / Markdown / PDF Reader + Apache Tika |
 | 构建 | Maven Wrapper |
-| 前端 | 单页 HTML + 原生 JS / SSE |
+| 前端 | 单页 HTML + 原生 JS |
 | 测试 | JUnit 5 / Mockito / MockMvc |
 
 ---
@@ -308,7 +303,7 @@ curl -X POST http://localhost:8080/api/kb/documents/{documentId}/rollback/1 \
 
 回滚后旧版本 chunk 重新启用，新版本 chunk 标记 disabled，不物理删除。
 
-### 6.5 普通对话与工具
+### 6.5 普通对话
 
 ```bash
 curl -X POST http://localhost:8080/api/chat/simple \
@@ -317,23 +312,7 @@ curl -X POST http://localhost:8080/api/chat/simple \
   -d '{"message":"你好","model":"deepseek-v4-flash"}'
 ```
 
-```bash
-curl -X POST http://localhost:8080/api/tools/calculator \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: dev-key-change-in-production" \
-  -d '{"input":"(2+3)*4"}'
-```
-
-### 6.6 多 Agent 编排
-
-```bash
-curl -X POST http://localhost:8080/api/chat/orchestrate \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: dev-key-change-in-production" \
-  -d '{"message":"研究虚拟线程","conversationId":"demo","strategy":"sequential","agents":["research","code"]}'
-```
-
-返回包含每个 Agent 的执行结果和 `traces`（执行轨迹）。
+这是默认对话模式，不检索知识空间。需要引用企业文档时，从顶部选择知识空间后提问。
 
 ---
 
@@ -382,8 +361,7 @@ curl -X POST http://localhost:8080/api/chat/orchestrate \
 - 模型 API Key 一致性（allow-client-model-key 开关行为）
 - Qdrant Bean 装配（内存模式不创建 QdrantClient）
 - 旧 RAG 接口默认禁用（`legacy.rag.enabled=false`）
-- 编排策略（sequential / parallel + TaskTrace）
-- RAG 与内置工具
+- 旧 RAG、Agent 和工具兼容性测试
 
 > 测试默认不依赖真实 API Key，不会访问外网 LLM。
 
@@ -393,7 +371,6 @@ curl -X POST http://localhost:8080/api/chat/orchestrate \
 
 - 平台 API Key 只通过请求头 `X-API-Key` 传递，常量时间比较，避免 URL 记录。
 - 按 IP 限流、CORS 白名单、Actuator 最小暴露。
-- 文件工具限制在工作区目录，HTTP 工具带 SSRF 校验。
 - `.env` 不入库，真实 Key 不出现在页面、日志和错误响应。
 - 生产环境必须替换默认 `AGENT_API_KEY`，并根据部署模式配置 DB / Redis / Qdrant / Embedding。
 - 异常处理统一返回通用错误信息，不泄露堆栈细节。
@@ -407,7 +384,7 @@ curl -X POST http://localhost:8080/api/chat/orchestrate \
 - ✅ 企业知识库领域模型（8 个 JPA 实体）、Repository 与 REST API
 - ✅ 知识空间问答：answer + citations + confidence + feedback
 - ✅ 浅色 DeepSeek 风格中文 Web UI
-- ✅ 模型注册、SSE、工具调用、多 Agent 编排（含执行轨迹）
+- ✅ 模型注册与知识库问答主链路
 - ✅ GitHub Actions CI、Dockerfile、Compose、Maven Wrapper
 - ✅ 133 个自动化测试（不依赖外网 LLM）
 - ✅ 文档分块（中文单字分词 + 英文 token）、PDF/Markdown 读取
@@ -422,7 +399,7 @@ curl -X POST http://localhost:8080/api/chat/orchestrate \
 - ✅ 对话上下文隔离（conversationId 隔离到用户 + 空间 + 会话）
 - ✅ 消息持久化（KbMessage 实体，按会话查询历史）
 - ✅ 多轮上下文问答（历史消息进入 prompt，过滤失败回复）
-- ✅ 页面模型 Key 全入口支持（chat/stream/agent/kb 均读取 X-Model-API-Key）
+- ✅ 页面模型 Key 支持普通对话和知识库问答
 - ✅ Qdrant 生产模式（Spring AI 自动配置 QdrantClient，版本化向量索引，空间过滤）
 - ✅ 旧 RAG 接口默认禁用（`legacy.rag.enabled=false`，防止绕过知识空间隔离）
 - ✅ 前端 XSS 防护（escapeHtml 转义所有动态内容）
@@ -471,8 +448,8 @@ Windows PowerShell 5.1 用户可直接运行 `scripts/run-demo-travel.ps1`。启
 
 ```text
 src/main/java/com/baiyu/agent/
-├── agent/            # Coordinator / Code / Research / Data / ReAct
-├── api/              # Chat / Agent / Tool Controller
+├── agent/            # Legacy 实验模块，未在知识库主界面开放
+├── api/              # Chat / KB Controller
 ├── config/           # AI、模型注册、向量库、安全、异常
 ├── kb/               # 知识空间、文档、版本、权限、引用、反馈
 │   ├── entity/
@@ -480,9 +457,9 @@ src/main/java/com/baiyu/agent/
 │   ├── KnowledgeBaseService.java
 │   ├── KbQaService.java
 │   └── PermissionService.java
-├── orchestrator/     # Sequential / Parallel + TaskTrace
-├── rag/              # RAG 文档读取、分块、检索
-├── tool/             # ToolRegistry + 内置工具
+├── orchestrator/     # Legacy 实验模块，未在知识库主界面开放
+├── rag/              # Legacy RAG 兼容模块，默认关闭
+├── tool/             # Legacy 工具注册表，未在知识库主界面开放
 └── memory/           # ChatMemoryService
 ```
 

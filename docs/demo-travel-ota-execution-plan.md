@@ -286,7 +286,7 @@ docker compose down -v
 
 简历中建议使用下面这条项目描述：
 
-> 面向旅游 OTA 场景的企业知识库问答平台，支持多知识空间、文档版本回滚、服务端权限校验、SSE 流式回答、引用溯源和多轮会话；使用 MySQL 持久化元数据、Redis 管理会话、Qdrant 承接向量检索，并通过 JWT、平台 Key 和按空间鉴权防止越权访问。
+> 面向旅游 OTA 场景的企业知识库问答平台，支持多知识空间、文档版本回滚、服务端权限校验、带引用回答、补充反馈和多轮会话；使用 MySQL 持久化元数据、Redis 管理会话、Qdrant 承接向量检索，并通过 JWT、平台 Key 和按空间鉴权防止越权访问。
 
 面试时重点回答三类问题：
 
@@ -308,3 +308,70 @@ docker compose down -v
 - [ ] README 使用最新浅色界面截图。
 - [ ] 公网地址不暴露 `.env`、数据库端口和模型 Key。
 - [ ] 演示结束后关闭服务器或轮换平台 Key。
+
+## 九、测试优化与 CI 演示
+
+当前自动化基线为 `133` 个测试，使用 `mvn clean verify` 执行，全部不依赖真实模型 Key 和外网 LLM。
+
+### 第一层：现有单元与控制器测试
+
+- 知识空间、文档上传、版本号、回滚和分块检索。
+- 权限服务的 `canRead`、`canWrite`、`canAdmin`。
+- JWT、路由鉴权、平台 Key 和模型 Key 传递。
+- 多轮消息、引用、置信度和补充反馈。
+
+这一层继续保持快速执行，提交前和 GitHub Actions 都运行。
+
+### 第二层：建议新增的 API 契约测试
+
+- 文档列表必须返回 `activeVersionNo` 和 `versionCount`。
+- v2 当前生效时回滚 v1，再恢复 v2。
+- 普通账号访问管理员空间必须返回 `403`。
+- `thumbs=comment` 时必须保存 `reason` 和 `correction`。
+- 切换知识空间后，新会话不能携带其他空间上下文。
+
+### 第三层：建议新增的持久化集成测试
+
+使用 Testcontainers 启动真实 MySQL 和 Redis，验证：
+
+- 应用重启后文档、版本、分块和用户仍然存在。
+- 内存向量库重启为空时，能够回退到 MySQL 已持久化分块。
+- Redis 会话与 MySQL 消息记录的隔离边界。
+- Qdrant 可用时版本化向量写入、停用和回滚。
+
+### 第四层：建议新增的 Playwright 端到端测试
+
+- 登录管理员账号并选择旅游知识库。
+- 文档列表显示 `当前 v2` 和 `共 2 版`。
+- 回滚到 v1 后回答引用 v1，再恢复 v2。
+- 点击引用展开原文、版本和相似度。
+- 点击“补充反馈”，填写原因和纠正建议后提交。
+- 登录普通账号访问管理员空间被拒绝。
+
+### 第五层：覆盖率与质量门禁
+
+- 引入 JaCoCo 生成覆盖率报告，先记录基线，不建议立即设置过高的强制阈值。
+- 模型相关测试使用 Mock ChatModel，CI 中不配置真实 API Key。
+- Docker 构建、`docker compose config` 可作为独立 CI Job。
+- 测试名称保持业务化，例如“普通账号不能访问管理员空间”，不要只写 `test1`。
+
+### GitHub Actions 录屏切换
+
+工作流文件：`.github/workflows/ci.yml`。
+
+录屏前提前打开并固定：
+
+`https://github.com/baiyu-jujuc/ai-agent/actions`
+
+镜头顺序：
+
+1. 从应用页面按 `Alt + Tab` 切到 Edge。
+2. 展示最新 `CI` 的绿色对勾。
+3. 点击最新运行，确认提交号与当前 `main` 一致。
+4. 展开 `Build and verify`，展示 `mvn -B verify --no-transfer-progress`。
+5. 展示 `Tests run: 133, Failures: 0, Errors: 0`。
+6. 再切回应用页面。
+
+口播：权限、版本、引用、反馈和核心服务都有自动化测试覆盖。每次推送到 main，GitHub Actions 都会使用 JDK 21 执行完整 Maven 验证并上传构建产物。
+
+推送后工作流会自动触发，不需要手工切换分支或启动任务。录制前提前打开 Actions 页面，避免现场等待加载。

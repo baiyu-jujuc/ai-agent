@@ -33,8 +33,6 @@ body{font-family:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-s
 .tb-btn{padding:5px 10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;color:var(--text-dim);cursor:pointer;display:flex;align-items:center;gap:4px;transition:all .15s;font-family:inherit;white-space:nowrap}
 .tb-btn:hover{background:var(--surface-hover);color:var(--text)}
 .tb-btn.active{background:var(--accent-bg);color:var(--accent);border-color:var(--accent)}
-.tb-btn .dot{width:6px;height:6px;border-radius:50%;background:var(--border)}
-.tb-btn.active .dot{background:var(--accent)}
 .tb-icon{width:32px;height:32px;border-radius:var(--radius-sm);background:var(--surface);border:1px solid var(--border);color:var(--text-dim);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;transition:all .15s}
 .tb-icon:hover{background:var(--surface-hover);color:var(--text)}
 
@@ -83,30 +81,6 @@ body{font-family:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-s
 .send-btn:hover:not(:disabled){background:var(--accent-dim)}
 .send-btn:disabled{opacity:.5;cursor:not-allowed}
 .input-hint{font-size:11px;color:var(--text-lighter);text-align:center;margin-top:6px}
-
-/* Sidebar drawer */
-.drawer{position:fixed;top:0;right:0;height:100vh;width:300px;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;z-index:100;transform:translateX(100%);transition:transform .25s ease;box-shadow:var(--shadow-lg)}
-.drawer.show{transform:translateX(0)}
-.drawer-overlay{position:fixed;inset:0;background:rgba(0,0,0,.15);z-index:99;display:none}
-.drawer-overlay.show{display:block}
-.drawer-header{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
-.drawer-header h3{font-size:14px;font-weight:600}
-.drawer-body{flex:1;overflow-y:auto;padding:8px}
-
-/* Tool cards */
-.tool-card{padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;transition:border-color .15s}
-.tool-card:hover{border-color:var(--accent)}
-.tool-card .name{font-size:13px;color:var(--accent);font-weight:600}
-.tool-card .desc{font-size:12px;color:var(--text-dim);margin-top:4px;line-height:1.5}
-.tool-test{margin-top:8px;display:flex;gap:4px}
-.tool-test input{flex:1;padding:6px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;outline:none}
-.tool-test input:focus{border-color:var(--accent)}
-.tool-test button{padding:6px 12px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);cursor:pointer;font-size:12px;font-weight:600;transition:background .15s}
-.tool-test button:hover{background:var(--accent-dim)}
-
-/* Storage status mini */
-.storage-mini{display:flex;gap:8px;align-items:center;font-size:11px;color:var(--text-lighter);padding:0 4px}
-.storage-mini .sep{color:var(--border)}
 
 /* Settings modal */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.2);display:none;align-items:center;justify-content:center;z-index:2000;backdrop-filter:blur(2px)}
@@ -254,17 +228,8 @@ body{font-family:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-s
       <option value="deepseek-v4-flash">Flash 快速</option>
       <option value="deepseek-v4-pro">Pro 高性能</option>
     </select>
-    <select class="tb-select" id="agentSelect" title="Agent">
-      <option value="coordinator">协调 Agent</option>
-      <option value="code">代码 Agent</option>
-      <option value="research">研究 Agent</option>
-      <option value="data">数据 Agent</option>
-      <option value="react">ReAct Agent</option>
-    </select>
   </div>
   <div class="topbar-right">
-    <button class="tb-btn" id="toolsBtn" title="启用工具调用"><span class="dot"></span><span class="label">工具</span></button>
-    <button class="tb-btn" id="streamBtn" title="启用流式输出"><span class="dot"></span><span class="label">流式</span></button>
     <div id="authBtnWrap">
       <button class="tb-btn" id="authBtn" title="登录/注册"><span class="label">登录/注册</span></button>
     </div>
@@ -275,7 +240,6 @@ body{font-family:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-s
         <button class="logout-btn" id="logoutBtn">退出</button>
       </div>
     </div>
-    <button class="tb-icon" id="toolsPanelBtn" title="工具面板">&#9776;</button>
     <button class="tb-icon" id="settingsBtn" title="设置">&#9881;</button>
   </div>
 </div>
@@ -302,25 +266,6 @@ body{font-family:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-s
     <button class="send-btn" id="sendBtn">发送</button>
   </div>
   <div class="input-hint">Enter 发送 / Shift+Enter 换行</div>
-</div>
-
-<!-- Tools drawer -->
-<div class="drawer-overlay" id="drawerOverlay"></div>
-<div class="drawer" id="toolsDrawer">
-  <div class="drawer-header">
-    <h3>工具面板</h3>
-    <button class="tb-icon" id="closeDrawerBtn" title="关闭">&times;</button>
-  </div>
-  <div class="drawer-body" id="toolList"></div>
-  <div style="padding:8px 16px;border-top:1px solid var(--border)">
-    <div class="storage-mini">
-      <span>记忆: <strong id="memoryBackend">--</strong></span>
-      <span class="sep">|</span>
-      <span>向量: <strong id="vectorBackend">--</strong></span>
-      <span class="sep">|</span>
-      <span>对话: <strong id="convCount">0</strong></span>
-    </div>
-  </div>
 </div>
 
 <!-- Settings modal -->
@@ -479,21 +424,9 @@ body{font-family:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-s
 <script>
 let conversationId='session-'+Date.now();
 let spaceConversations={};
-let selectedAgent='coordinator';
-let useTools=false;
-let useStream=false;
 let selectedModel='deepseek-v4-flash';
 let selectedSpace='';
 let feedbackTarget={messageId:'',spaceId:''};
-const TOOL_DISPLAY={
-  calculator:{name:'计算器',description:'计算数学表达式，例如 2+3*4、(1+2)*3、2^10。'},
-  file:{name:'文件操作',description:'在工作目录内读取、写入或列出文件。'},
-  http:{name:'HTTP 请求',description:'发送受安全保护的 HTTP GET 请求，并返回响应摘要。'},
-  systeminfo:{name:'系统信息',description:'查看操作系统、Java 版本和运行状态。'},
-  time:{name:'当前时间',description:'获取服务器当前日期和时间，无需输入参数。'},
-  weather:{name:'天气查询',description:'查询指定城市天气，例如北京、上海、南京。'},
-  'web-search':{name:'网络搜索',description:'搜索网络信息并返回相关结果摘要。'}
-};
 
 function getBaseUrl(){return(localStorage.getItem('serverUrl')||'http://localhost:8080').replace(/\/$/,'');}
 function getApiKey(){return(localStorage.getItem('agentApiKey')||'dev-key-change-in-production').trim();}
@@ -589,7 +522,6 @@ function addTypingIndicator(){
 
 /* Top bar controls */
 document.getElementById('modelSelect').addEventListener('change',e=>selectedModel=e.target.value);
-document.getElementById('agentSelect').addEventListener('change',e=>selectedAgent=e.target.value);
 document.getElementById('kbSpaceSelect').addEventListener('change',e=>{
   const nextSpace=e.target.value;
   if(nextSpace===selectedSpace)return;
@@ -610,15 +542,6 @@ function startNewConversation(){
     addMessage('assistant','已进入默认对话，这是新的会话。','知识库助手');
   }
 }
-
-document.getElementById('toolsBtn').addEventListener('click',e=>{
-  useTools=!useTools;
-  e.currentTarget.classList.toggle('active',useTools);
-});
-document.getElementById('streamBtn').addEventListener('click',e=>{
-  useStream=!useStream;
-  e.currentTarget.classList.toggle('active',useStream);
-});
 
 /* ========== Auth ========== */
 function updateAuthUI(){
@@ -868,115 +791,15 @@ async function sendMessage(){
         typingEl.remove();
         addMessage('assistant','请求失败: '+err.message);
       }
-    }else if(useStream){
-      const typingEl=addTypingIndicator();
-      let fullText='';
-      const params=new URLSearchParams({message:text,conversationId,model:selectedModel,agent:selectedAgent,useTools:useTools?'true':'false'});
-      const url=getBaseUrl()+'/api/chat/stream?'+params.toString();
-      const headers={'X-API-Key':getApiKey(),'Accept':'text/event-stream'};
-      const jwt=getJwtToken();
-      if(jwt)headers['Authorization']='Bearer '+jwt;
-      const res=await fetch(url,{headers});
-      if(!res.ok){throw new Error('HTTP '+res.status);}
-      const reader=res.body.getReader();
-      const decoder=new TextDecoder();
-      typingEl.innerHTML='';
-      let buffer='';
-      while(true){
-        const{done,value}=await reader.read();
-        if(done)break;
-        buffer+=decoder.decode(value,{stream:true});
-        const lines=buffer.split('\n');
-        buffer=lines.pop();
-        for(const line of lines){
-          if(line.startsWith('data:')){
-            const data=line.slice(5).trim();
-            if(data==='[DONE]')break;
-            try{fullText+=JSON.parse(data);}catch{fullText+=data;}
-          }
-        }
-        typingEl.innerHTML=renderMarkdown(fullText);
-        document.getElementById('chatWrap').scrollTo({top:document.getElementById('chatWrap').scrollHeight,behavior:'smooth'});
-      }
-      if(!fullText){typingEl.innerHTML='AI 返回空回复';}
     }else{
-      const endpoint=useTools?'/api/chat/simple':'/api/chat/agent/'+selectedAgent;
-      const body=useTools
-        ?{message:text,conversationId,model:selectedModel,useTools:'true'}
-        :{message:text,conversationId,model:selectedModel};
-      const res=await apiFetch(endpoint,{method:'POST',body:JSON.stringify(body)});
+      const res=await apiFetch('/api/chat/simple',{method:'POST',body:JSON.stringify({message:text,conversationId,model:selectedModel})});
       const data=await res.json();
-      addMessage('assistant',data.response||'AI 返回空回复',(data.model||selectedModel)+' · '+(data.agent||selectedAgent));
+      addMessage('assistant',data.response||'AI 返回空回复',data.model||selectedModel);
     }
   }catch(err){
     addMessage('assistant','请求失败: '+err.message);
   }finally{
     sendBtn.disabled=false;sendBtn.textContent='发送';
-  }
-}
-
-/* Tools drawer */
-document.getElementById('toolsPanelBtn').addEventListener('click',()=>{
-  document.getElementById('toolsDrawer').classList.add('show');
-  document.getElementById('drawerOverlay').classList.add('show');
-});
-document.getElementById('closeDrawerBtn').addEventListener('click',()=>{
-  document.getElementById('toolsDrawer').classList.remove('show');
-  document.getElementById('drawerOverlay').classList.remove('show');
-});
-document.getElementById('drawerOverlay').addEventListener('click',()=>{
-  document.getElementById('toolsDrawer').classList.remove('show');
-  document.getElementById('drawerOverlay').classList.remove('show');
-});
-
-async function loadTools(){
-  try{
-    const res=await apiFetch('/api/chat/tools');
-    const tools=await res.json();
-    const list=document.getElementById('toolList');
-    list.innerHTML='';
-    if(!tools.length){list.innerHTML='<div style="color:var(--text-lighter);font-size:12px;padding:8px">暂无工具</div>';return;}
-    tools.forEach(t=>{
-      const display=TOOL_DISPLAY[t.name]||{name:t.name,description:t.description};
-      const card=document.createElement('div');
-      card.className='tool-card';
-      card.innerHTML='<div class="name">'+escapeHtml(display.name)+'</div><div class="desc">'+escapeHtml(display.description)+'</div><div class="tool-test"><input placeholder="输入参数..." data-tool="'+escapeHtml(t.name)+'"><button>执行</button></div>';
-      card.querySelector('button').addEventListener('click',function(){testTool(t.name,this);});
-      list.appendChild(card);
-    });
-  }catch(e){document.getElementById('toolList').innerHTML='<div style="color:var(--text-lighter);font-size:12px;padding:8px">加载失败</div>';}
-}
-
-async function testTool(name,btn){
-  const inp=btn.previousElementSibling;
-  const val=inp.value.trim();
-  if(!val){showToast('请输入参数','error');return;}
-  btn.textContent='...';btn.disabled=true;
-  try{
-    const res=await apiFetch('/api/tools/'+name,{method:'POST',body:JSON.stringify({input:val})});
-    const data=await res.json();
-    addMessage('assistant','<strong>工具 '+escapeHtml(name)+'("'+escapeHtml(val)+'")</strong><br><pre><code>'+escapeHtml(data.result||'')+'</code></pre>','工具结果');
-  }catch(err){showToast('执行失败: '+err.message,'error');}
-  finally{btn.textContent='执行';btn.disabled=false;}
-}
-
-/* Storage status */
-async function loadStorageStatus(){
-  try{
-    const res=await apiFetch('/api/chat/storage-status');
-    const data=await res.json();
-    const memType=data.memoryBackend||'memory';
-    const memEl=document.getElementById('memoryBackend');
-    memEl.textContent=memType==='redis'?'Redis':'内存';
-    memEl.style.color=memType==='redis'?'var(--green)':'var(--text-dim)';
-    const vecType=data.vectorStoreBackend||'memory';
-    const vecEl=document.getElementById('vectorBackend');
-    vecEl.textContent=vecType==='qdrant'?'Qdrant':'内存';
-    vecEl.style.color=vecType==='qdrant'?'var(--green)':'var(--text-dim)';
-    document.getElementById('convCount').textContent=data.conversations||0;
-  }catch(e){
-    document.getElementById('memoryBackend').textContent='离线';
-    document.getElementById('memoryBackend').style.color='var(--red)';
   }
 }
 
@@ -1205,7 +1028,7 @@ document.getElementById('saveSettingsBtn').addEventListener('click',()=>{
   if(mk)localStorage.setItem('modelApiKey',mk);
   document.getElementById('settingsModal').classList.remove('show');
   showToast('设置已保存','success');
-  loadTools();loadStorageStatus();loadKnowledgeSpaces();
+  loadKnowledgeSpaces();
 });
 
 /* Key show/hide/clear */
@@ -1228,8 +1051,7 @@ bindKeyClear('modelKeyClear','settingsModelKey');
 
 /* Init */
 updateAuthUI();
-loadTools();loadStorageStatus();loadKnowledgeSpaces();
-setInterval(loadStorageStatus,30000);
+loadKnowledgeSpaces();
 </script>
 </body>
 </html>

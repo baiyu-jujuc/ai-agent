@@ -94,7 +94,7 @@ wsl -d Debian -- bash -lc 'cd "/mnt/d/AI Agent (test)" && docker compose ps'
 
 ### 01:05-01:35 引用问答与置信度
 
-画面：选择知识空间，提问“生产发布每周五几点进入变更冻结期？”。展示流式或完整回答、`[1]` 引用和置信度。
+画面：选择知识空间，提问“生产发布每周五几点进入变更冻结期？”。展示完整回答、`[1]` 引用和置信度。
 
 口播：回答只使用当前空间内有权限访问的文档片段，并返回文档、版本、分块、相似度、置信度和消息编号，便于追溯。
 
@@ -124,7 +124,7 @@ wsl -d Debian -- bash -lc 'cd "/mnt/d/AI Agent (test)" && docker compose ps'
 - 普通账号访问未授权空间确实失败。
 - 视频长度控制在 3 分钟以内，导出为 1080p MP4。
 
-可在剪映中自动生成字幕，但需要人工检查“Qdrant、SSE、canRead、conversationId”等工程术语。
+可在剪映中自动生成字幕，但需要人工检查“Qdrant、canRead、conversationId”等工程术语。
 
 ## 五、录制失败时的排查
 
