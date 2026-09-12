@@ -154,8 +154,8 @@ public class KbQaService {
 
     @Transactional
     public Feedback submitFeedback(String messageId, String spaceId, String thumbs, String reason, String correction) {
-        if (!"up".equals(thumbs) && !"down".equals(thumbs)) {
-            throw new IllegalArgumentException("thumbs 必须为 'up' 或 'down'");
+        if (!"up".equals(thumbs) && !"down".equals(thumbs) && !"comment".equals(thumbs)) {
+            throw new IllegalArgumentException("thumbs 必须为 'up'、'down' 或 'comment'");
         }
         Feedback fb = new Feedback(messageId, spaceId, thumbs, reason, correction);
         return feedbackRepo.save(fb);

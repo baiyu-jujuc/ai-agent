@@ -117,7 +117,9 @@ body{font-family:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-s
 .settings-field{margin-bottom:14px}
 .settings-field label{display:block;font-size:12px;color:var(--text-dim);margin-bottom:5px;font-weight:500}
 .settings-field input{width:100%;padding:9px 12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px;outline:none;font-family:inherit}
+.settings-field textarea{width:100%;padding:9px 12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px;outline:none;font-family:inherit;resize:vertical;min-height:76px;line-height:1.5}
 .settings-field input:focus{border-color:var(--accent);background:var(--surface)}
+.settings-field textarea:focus{border-color:var(--accent);background:var(--surface)}
 .settings-field .hint{font-size:11px;color:var(--text-lighter);margin-top:3px}
 .key-row{display:flex;gap:6px;align-items:center}
 .key-row input{flex:1}
@@ -416,6 +418,26 @@ body{font-family:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-s
   </div>
 </div>
 
+<!-- Feedback modal -->
+<div class="modal-overlay" id="feedbackModal">
+  <div class="modal-panel">
+    <h2>补充反馈</h2>
+    <p class="subtitle">说明问题原因，或提供更准确的答案</p>
+    <div class="settings-field">
+      <label>问题说明（可选）</label>
+      <textarea id="feedbackReason" maxlength="2000" placeholder="例如：回答不完整、引用不准确、版本过旧"></textarea>
+    </div>
+    <div class="settings-field">
+      <label>纠正建议（可选）</label>
+      <textarea id="feedbackCorrection" maxlength="4000" placeholder="请输入你认为更准确的答案或修订建议"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="cancelFeedbackBtn">取消</button>
+      <button class="btn btn-primary" id="submitFeedbackBtn">提交反馈</button>
+    </div>
+  </div>
+</div>
+
 <!-- Document management modal -->
 <div class="modal-overlay" id="docsModal">
   <div class="modal-panel wide">
@@ -462,6 +484,7 @@ let useTools=false;
 let useStream=false;
 let selectedModel='deepseek-v4-flash';
 let selectedSpace='';
+let feedbackTarget={messageId:'',spaceId:''};
 const TOOL_DISPLAY={
   calculator:{name:'计算器',description:'计算数学表达式，例如 2+3*4、(1+2)*3、2^10。'},
   file:{name:'文件操作',description:'在工作目录内读取、写入或列出文件。'},
@@ -760,6 +783,7 @@ function addKBMessage(answer,confidence,citations,messageId,metaText){
   html+='<div class="feedback-row" data-msg="'+messageId+'">'+
     '<button class="feedback-btn" onclick="submitFeedback(\''+messageId+'\',\'up\',this)">👍 有用</button>'+
     '<button class="feedback-btn" onclick="submitFeedback(\''+messageId+'\',\'down\',this)">👎 没用</button>'+
+    '<button class="feedback-btn" onclick="openFeedbackModal(\''+messageId+'\')">补充反馈</button>'+
     '<span class="feedback-thanks" style="display:none">感谢反馈！</span>'+
   '</div>';
   div.innerHTML=html;
@@ -783,6 +807,37 @@ async function submitFeedback(messageId,thumbs,btn){
     });
   }catch(e){/* silent */}
 }
+
+function openFeedbackModal(messageId){
+  feedbackTarget={messageId:messageId,spaceId:selectedSpace};
+  document.getElementById('feedbackReason').value='';
+  document.getElementById('feedbackCorrection').value='';
+  document.getElementById('feedbackModal').classList.add('show');
+}
+
+document.getElementById('cancelFeedbackBtn').addEventListener('click',()=>{
+  document.getElementById('feedbackModal').classList.remove('show');
+});
+
+document.getElementById('submitFeedbackBtn').addEventListener('click',async()=>{
+  const reason=document.getElementById('feedbackReason').value.trim();
+  const correction=document.getElementById('feedbackCorrection').value.trim();
+  if(!reason&&!correction){showToast('请填写问题说明或纠正建议','error');return;}
+  if(!feedbackTarget.messageId||!feedbackTarget.spaceId){showToast('反馈目标已失效','error');return;}
+  const btn=document.getElementById('submitFeedbackBtn');
+  btn.disabled=true;btn.textContent='提交中...';
+  try{
+    await apiFetch('/api/kb/feedback',{
+      method:'POST',
+      body:JSON.stringify({messageId:feedbackTarget.messageId,spaceId:feedbackTarget.spaceId,thumbs:'comment',reason,correction})
+    });
+    const row=document.querySelector('.feedback-row[data-msg="'+feedbackTarget.messageId+'"]');
+    if(row){const thanks=row.querySelector('.feedback-thanks');if(thanks)thanks.style.display='flex';}
+    document.getElementById('feedbackModal').classList.remove('show');
+    showToast('反馈已提交','success');
+  }catch(e){/* apiFetch already shows toast */}
+  finally{btn.disabled=false;btn.textContent='提交反馈';}
+});
 
 async function sendMessage(){
   const text=input.value.trim();

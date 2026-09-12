@@ -18,7 +18,7 @@ public class Feedback {
     @Column(name = "space_id", nullable = false)
     private String spaceId;
 
-    // up | down
+    // up | down | comment
     @Column(nullable = false)
     private String thumbs;
 

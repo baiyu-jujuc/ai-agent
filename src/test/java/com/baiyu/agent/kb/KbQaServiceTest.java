@@ -121,6 +121,14 @@ class KbQaServiceTest {
     }
 
     @Test
+    void submitFeedbackCommentWithReasonAndCorrection() {
+        var fb = qaService.submitFeedback("msg-1", "space-1", "comment", "答案不完整", "应补充退款时限");
+        assertEquals("comment", fb.getThumbs());
+        assertEquals("答案不完整", fb.getReason());
+        assertEquals("应补充退款时限", fb.getCorrection());
+    }
+
+    @Test
     void askSavesUserAndAssistantMessages() {
         Chunk c1 = new Chunk("ver-001", "space-001", "doc-001", "Java virtual threads are lightweight concurrency units", 0);
         ReflectionTestUtils.setField(c1, "id", "chunk-001");
