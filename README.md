@@ -126,10 +126,10 @@ cp .env.example .env
 
 - `agent.storage.vector-store=memory`
 - `agent.storage.memory=memory`
-- H2 内存数据库
+- H2 文件数据库：`./data/agentdb.mv.db`
 - API Key 默认 `dev-key-change-in-production`
 
-浏览器打开 <http://localhost:8080>。
+浏览器打开 <http://localhost:8080>。IntelliJ 和本地 Maven 启动默认使用 `./data/agentdb.mv.db`，首次运行准备脚本后，账号和知识库在 IDE 重启后仍会保留；测试环境使用独立内存库。
 
 ### 5.2 Docker Compose
 
@@ -344,7 +344,7 @@ curl -X POST http://localhost:8080/api/chat/simple \
 | `DEEPSEEK_API_KEY` | 必填 | 模型服务 API Key（服务端环境变量） |
 | `AGENT_API_KEY` | `dev-key-change-in-production` | 平台 API Key |
 | `SERVER_PORT` | `8080` | 服务端口 |
-| `SPRING_DATASOURCE_URL` | H2 内存库 | JDBC 地址；Compose 使用 MySQL |
+| `SPRING_DATASOURCE_URL` | H2 文件库 | JDBC 地址；测试使用内存库，Compose 使用 MySQL |
 | `MYSQL_DATABASE` / `MYSQL_USER` / `MYSQL_PASSWORD` | `ai_agent` 等 | Compose 数据库初始化参数 |
 | `VECTOR_STORE_TYPE` | `memory` | `memory` / `qdrant` |
 | `MEMORY_TYPE` | `memory` | `memory` / `redis`；Compose 默认 `redis` |

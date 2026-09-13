@@ -32,6 +32,7 @@ application-secret.yml
 *.jks
 
 # H2 Database
+data/
 *.db
 *.mv.db
 *.trace.db

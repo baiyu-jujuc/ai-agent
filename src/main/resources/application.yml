@@ -29,10 +29,10 @@ spring:
     exclude:
       ${AUTOCONFIG_EXCLUDE:org.springframework.ai.vectorstore.qdrant.autoconfigure.QdrantVectorStoreAutoConfiguration}
 
-  # H2 is the zero-dependency default. Docker Compose overrides these values
-  # with SPRING_DATASOURCE_* variables and uses MySQL for persistent demo data.
+  # IntelliJ/local runs use a persistent file-based H2 database by default.
+  # Docker Compose overrides these values with SPRING_DATASOURCE_* and uses MySQL.
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:h2:mem:agentdb;DB_CLOSE_DELAY=-1}
+    url: ${SPRING_DATASOURCE_URL:jdbc:h2:file:./data/agentdb;DB_CLOSE_DELAY=-1}
     driver-class-name: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME:org.h2.Driver}
     username: ${SPRING_DATASOURCE_USERNAME:${H2_USERNAME:sa}}
     password: ${SPRING_DATASOURCE_PASSWORD:${H2_PASSWORD:}}
