@@ -25,6 +25,12 @@ services:
       - SPRING_DATASOURCE_PASSWORD=${MYSQL_PASSWORD:-ai_agent_demo_password}
       - SPRING_DATASOURCE_DRIVER_CLASS_NAME=com.mysql.cj.jdbc.Driver
       - H2_CONSOLE=false
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     depends_on:
       mysql:
         condition: service_healthy
