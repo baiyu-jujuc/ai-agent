@@ -8,11 +8,10 @@
 #   .\scripts\docker-start.ps1 compose ps
 #
 
-param(
-    [string]$Action = "start",
-    [Parameter(ValueFromRemainingArguments = $true)]
-    [string[]]$CommandArgs
-)
+param([string]$Action = "start")
+
+# Keep flags such as -d out of PowerShell's own parameter binding.
+$CommandArgs = @($args)
 
 $env:WSL_UTF8 = "1"
 try {

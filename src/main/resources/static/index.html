@@ -426,6 +426,7 @@ let conversationId='session-'+Date.now();
 let spaceConversations={};
 let selectedModel='deepseek-v4-flash';
 let selectedSpace='';
+let spacePermissions={};
 let feedbackTarget={messageId:'',spaceId:''};
 
 function getBaseUrl(){return(localStorage.getItem('serverUrl')||'http://localhost:8080').replace(/\/$/,'');}
@@ -444,6 +445,8 @@ function getSpaceConversationId(spaceId){
 }
 
 async function apiFetch(path,options={}){
+  const silent=options.silent===true;
+  delete options.silent;
   const url=getBaseUrl()+path;
   const isFormData=typeof FormData!=='undefined'&&options.body instanceof FormData;
   const defaultHeaders={'X-API-Key':getApiKey()};
@@ -458,11 +461,24 @@ async function apiFetch(path,options={}){
     localStorage.removeItem('jwtToken');
     localStorage.removeItem('currentUser');
     updateAuthUI();
-    showToast('登录已过期，请重新登录','error');
-    throw new Error('401');
+    if(!silent)showToast('登录已过期，请重新登录','error');
+    const err=new Error('401');
+    err.status=401;
+    throw err;
   }
-  if(res.status===429){showToast('请求过于频繁，请稍后重试','error');throw new Error('429');}
-  if(!res.ok){const t=await res.text();showToast('请求失败: '+res.status,'error');throw new Error(res.status+': '+t);}
+  if(res.status===429){
+    if(!silent)showToast('请求过于频繁，请稍后重试','error');
+    const err=new Error('429');
+    err.status=429;
+    throw err;
+  }
+  if(!res.ok){
+    const t=await res.text();
+    if(!silent)showToast('请求失败: '+res.status,'error');
+    const err=new Error(res.status+': '+t);
+    err.status=res.status;
+    throw err;
+  }
   return res;
 }
 
@@ -522,29 +538,68 @@ function addTypingIndicator(){
 
 /* Top bar controls */
 document.getElementById('modelSelect').addEventListener('change',e=>selectedModel=e.target.value);
-document.getElementById('kbSpaceSelect').addEventListener('change',e=>{
+document.getElementById('kbSpaceSelect').addEventListener('change',async e=>{
   const nextSpace=e.target.value;
   if(nextSpace===selectedSpace)return;
   selectedSpace=nextSpace;
   startNewConversation();
+  const perms=spacePermissions[selectedSpace];
+  if(perms&&perms.canRead===false){
+    const spaceName=e.target.options[e.target.selectedIndex]?e.target.options[e.target.selectedIndex].text:'该知识空间';
+    await demonstrateNoPermission(selectedSpace,spaceName);
+  }
 });
 
 function startNewConversation(){
   const messages=document.getElementById('messages');
   messages.innerHTML='';
+  resetDocumentState();
   if(selectedSpace){
     spaceConversations[selectedSpace]='kb-'+selectedSpace+'-'+Date.now();
     const sel=document.getElementById('kbSpaceSelect');
     const spaceName=sel.options[sel.selectedIndex]?sel.options[sel.selectedIndex].text:'知识空间';
-    addMessage('assistant','已切换到「'+spaceName+'」，这是新的会话。','知识库助手');
+    const perms=spacePermissions[selectedSpace];
+    if(perms&&perms.canRead===false){
+      addMessage('assistant','当前账号无权访问「'+spaceName+'」，这是服务端权限校验演示。','知识库助手');
+    }else{
+      addMessage('assistant','已切换到「'+spaceName+'」，这是新的会话。','知识库助手');
+    }
   }else{
     conversationId='session-'+Date.now();
     addMessage('assistant','已进入默认对话，这是新的会话。','知识库助手');
   }
 }
 
+function resetDocumentState(){
+  const docsModal=document.getElementById('docsModal');
+  if(docsModal)docsModal.classList.remove('show');
+  const versionPanel=document.getElementById('versionPanel');
+  if(versionPanel)versionPanel.style.display='none';
+  const versionList=document.getElementById('versionList');
+  if(versionList)versionList.innerHTML='';
+  const docList=document.getElementById('docList');
+  if(docList)docList.innerHTML='<div class="doc-list-empty">请选择知识空间</div>';
+  const docCount=document.getElementById('docCount');
+  if(docCount)docCount.textContent='0 个文档';
+}
+
+async function demonstrateNoPermission(spaceId,spaceName){
+  try{
+    await apiFetch('/api/kb/spaces/'+encodeURIComponent(spaceId)+'/documents',{silent:true});
+    showToast('权限状态异常：接口未拒绝访问','error');
+  }catch(err){
+    if(err&&err.status===403){
+      showToast('无权限访问「'+spaceName+'」（403）','error');
+    }else{
+      showToast('权限校验失败','error');
+    }
+  }
+}
+
 /* ========== Auth ========== */
 function updateAuthUI(){
+  spacePermissions={};
+  resetDocumentState();
   const user=getCurrentUser();
   const authWrap=document.getElementById('authBtnWrap');
   const userWrap=document.getElementById('userInfoWrap');
@@ -588,10 +643,13 @@ document.getElementById('doLoginBtn').addEventListener('click',async()=>{
     if(data.token){
       localStorage.setItem('jwtToken',data.token);
       localStorage.setItem('currentUser',JSON.stringify({userId:data.userId,username:data.username}));
+      selectedSpace='';
+      document.getElementById('kbSpaceSelect').value='';
       updateAuthUI();
       closeAuthModal();
       showToast('登录成功','success');
-      loadKnowledgeSpaces();
+      await loadKnowledgeSpaces();
+      startNewConversation();
     }else{
       showToast('登录失败：未返回 token','error');
     }
@@ -611,10 +669,13 @@ document.getElementById('doRegisterBtn').addEventListener('click',async()=>{
     if(data.token){
       localStorage.setItem('jwtToken',data.token);
       localStorage.setItem('currentUser',JSON.stringify({userId:data.userId,username:data.username}));
+      selectedSpace='';
+      document.getElementById('kbSpaceSelect').value='';
       updateAuthUI();
       closeAuthModal();
       showToast('注册成功','success');
-      loadKnowledgeSpaces();
+      await loadKnowledgeSpaces();
+      startNewConversation();
     }else{
       showToast('注册失败：未返回 token','error');
     }
@@ -622,15 +683,15 @@ document.getElementById('doRegisterBtn').addEventListener('click',async()=>{
   finally{btn.disabled=false;btn.textContent='注册';}
 });
 
-document.getElementById('logoutBtn').addEventListener('click',()=>{
+document.getElementById('logoutBtn').addEventListener('click',async()=>{
   localStorage.removeItem('jwtToken');
   localStorage.removeItem('currentUser');
-  updateAuthUI();
-  showToast('已退出登录','success');
   selectedSpace='';
   document.getElementById('kbSpaceSelect').value='';
+  updateAuthUI();
+  showToast('已退出登录','success');
+  await loadKnowledgeSpaces();
   startNewConversation();
-  loadKnowledgeSpaces();
 });
 
 /* Input */
@@ -811,18 +872,25 @@ async function loadKnowledgeSpaces(){
     const sel=document.getElementById('kbSpaceSelect');
     const prev=selectedSpace;
     sel.innerHTML='<option value="">默认对话</option>';
+    spacePermissions={};
     spaces.forEach(s=>{
+      const canRead=s.canRead!==false;
+      const canWrite=s.canWrite===true;
+      spacePermissions[s.id]={canRead:canRead,canWrite:canWrite,canAdmin:s.canAdmin===true};
       const opt=document.createElement('option');
       opt.value=s.id;
-      opt.textContent=s.name;
+      opt.textContent=canRead?s.name:s.name+'（无权限）';
       sel.appendChild(opt);
     });
+    let nextSpace='';
     if(prev&&spaces.some(s=>s.id===prev)){
-      sel.value=prev;
-      selectedSpace=prev;
+      nextSpace=prev;
     }else{
-      selectedSpace=sel.value;
+      const firstReadable=spaces.find(s=>s.canRead!==false);
+      if(firstReadable)nextSpace=firstReadable.id;
     }
+    sel.value=nextSpace;
+    selectedSpace=nextSpace;
   }catch(e){
     /* KB API may not be available in all deployments */
   }
@@ -861,6 +929,13 @@ document.getElementById('docsBtn').addEventListener('click',()=>{
     showToast('请先选择一个知识空间','error');
     return;
   }
+  const perms=spacePermissions[selectedSpace];
+  if(perms&&perms.canRead===false){
+    const sel=document.getElementById('kbSpaceSelect');
+    const spaceName=sel.options[sel.selectedIndex]?sel.options[sel.selectedIndex].text:'该知识空间';
+    demonstrateNoPermission(selectedSpace,spaceName);
+    return;
+  }
   openDocsModal();
 });
 
@@ -874,9 +949,10 @@ function openDocsModal(){
   const spaceName=sel.options[sel.selectedIndex]?sel.options[sel.selectedIndex].text:'';
 
   subtitle.textContent='当前空间：'+spaceName;
-  uploadSection.style.display='block';
+  const perms=spacePermissions[selectedSpace]||{canRead:true,canWrite:true};
+  uploadSection.style.display=perms.canWrite?'block':'none';
   listSection.style.display='block';
-  divider.style.display='block';
+  divider.style.display=perms.canWrite?'block':'none';
   modal.classList.add('show');
   loadDocList();
 }
@@ -907,11 +983,13 @@ async function uploadDocuments(files){
       const res=await apiFetch('/api/kb/spaces/'+encodeURIComponent(selectedSpace)+'/documents',{
         method:'POST',
         body:formData,
-        headers:{}
+        headers:{},
+        silent:true
       });
       showToast('上传成功：'+file.name,'success');
     }catch(err){
-      showToast('上传失败：'+file.name,'error');
+      if(err&&err.status===403)showToast('无权限上传：当前账号只有只读权限','error');
+      else showToast('上传失败：'+file.name,'error');
     }
   }
   loadDocList();
@@ -955,7 +1033,7 @@ async function loadDocList(){
       btn.addEventListener('click',()=>loadDocVersions(btn.dataset.docId,btn.dataset.docName));
     });
   }catch(e){
-    listEl.innerHTML='<div class="doc-list-empty">加载失败</div>';
+    listEl.innerHTML='<div class="doc-list-empty">'+(e&&e.status===403?'无权限访问该空间':'加载失败')+'</div>';
   }
 }
 
@@ -973,13 +1051,14 @@ async function loadDocVersions(documentId,filename){
       return;
     }
     listEl.innerHTML='';
+    const canWrite=spacePermissions[selectedSpace]&&spacePermissions[selectedSpace].canWrite===true;
     versions.forEach(v=>{
       const row=document.createElement('div');
       row.className='version-row';
       const timeStr=v.createdAt?new Date(v.createdAt).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
       const action=v.active
         ?'<span class="version-active">当前版本</span>'
-        :'<button class="version-rollback-btn" data-version="'+v.versionNo+'">回滚到此版本</button>';
+        :(canWrite?'<button class="version-rollback-btn" data-version="'+v.versionNo+'">回滚到此版本</button>':'<span class="version-meta">只读</span>');
       const versionLabel=v.active?'v'+v.versionNo+' · 当前生效':'v'+v.versionNo+' · 历史版本';
       row.innerHTML=
         '<div class="version-info">'+
@@ -991,19 +1070,20 @@ async function loadDocVersions(documentId,filename){
       listEl.appendChild(row);
     });
   }catch(e){
-    listEl.innerHTML='<div class="doc-list-empty">版本加载失败</div>';
+    listEl.innerHTML='<div class="doc-list-empty">'+(e&&e.status===403?'无权限查看版本':'版本加载失败')+'</div>';
   }
 }
 
 async function rollbackDocument(documentId,versionNo,filename){
   if(!confirm('确认将 '+filename+' 回滚到 v'+versionNo+' 吗？'))return;
   try{
-    await apiFetch('/api/kb/documents/'+encodeURIComponent(documentId)+'/rollback/'+versionNo,{method:'POST'});
+    await apiFetch('/api/kb/documents/'+encodeURIComponent(documentId)+'/rollback/'+versionNo,{method:'POST',silent:true});
     showToast('已回滚到 v'+versionNo,'success');
     await loadDocVersions(documentId,filename);
     await loadDocList();
   }catch(e){
-    showToast('回滚失败','error');
+    if(e&&e.status===403)showToast('无权限回滚：当前账号只有只读权限','error');
+    else showToast('回滚失败','error');
   }
 }
 

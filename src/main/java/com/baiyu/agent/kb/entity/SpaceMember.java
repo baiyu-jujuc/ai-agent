@@ -18,7 +18,7 @@ public class SpaceMember {
     @Column(name = "user_id", nullable = false)
     private String userId;
 
-    // reader | writer | admin
+    // reader | writer | admin | denied
     @Column(nullable = false)
     private String role = "reader";
 

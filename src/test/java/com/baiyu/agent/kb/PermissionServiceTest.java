@@ -69,6 +69,23 @@ class PermissionServiceTest {
     }
 
     @Test
+    void deniedMemberCanDiscoverButCannotRead() {
+        KnowledgeSpace space = new KnowledgeSpace("Admin only", "test");
+        space.setVisibility("team");
+        ReflectionTestUtils.setField(space, "id", "space-001");
+        when(spaceRepo.findById("space-001")).thenReturn(Optional.of(space));
+
+        SpaceMember member = new SpaceMember("space-001", "user-001", "denied");
+        when(memberRepo.findBySpaceIdAndUserId("space-001", "user-001"))
+                .thenReturn(Optional.of(member));
+
+        assertTrue(permissionService.canDiscover("space-001", "user-001"));
+        assertFalse(permissionService.canRead("space-001", "user-001"));
+        assertFalse(permissionService.canWrite("space-001", "user-001"));
+        assertFalse(permissionService.canAdmin("space-001", "user-001"));
+    }
+
+    @Test
     void writerCanWrite() {
         KnowledgeSpace space = new KnowledgeSpace("Team", "test");
         space.setVisibility("team");

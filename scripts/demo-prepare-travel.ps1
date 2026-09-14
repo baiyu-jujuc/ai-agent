@@ -129,6 +129,11 @@ Invoke-DemoRequest -Method POST -Path "/api/kb/spaces/$($space.id)/members" -Tok
     role = "reader"
 } | Out-Null
 
+Invoke-DemoRequest -Method POST -Path "/api/kb/spaces/$($adminOnly.id)/members" -Token $admin.token -Body @{
+    userId = $reader.userId
+    role = "denied"
+} | Out-Null
+
 Write-Host "[4/5] 上传旅游行业演示文档与版本..." -ForegroundColor Cyan
 Ensure-Document -SpaceId $space.id -Token $admin.token -Filename "regulatory-baseline.md" -File "$repoRoot/docs/demo-data/travel-ota/regulatory-baseline.md" | Out-Null
 Ensure-Document -SpaceId $space.id -Token $admin.token -Filename "customer-service-escalation.md" -File "$repoRoot/docs/demo-data/travel-ota/customer-service-escalation.md" | Out-Null

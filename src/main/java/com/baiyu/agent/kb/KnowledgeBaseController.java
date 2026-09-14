@@ -35,15 +35,15 @@ public class KnowledgeBaseController {
         KnowledgeSpace space = kbService.createSpace(name, description, visibility, embeddingModel);
         // Creator auto-becomes admin
         permissionService.addMember(space.getId(), userId, "admin");
-        return toSpaceMap(space);
+        return toSpaceMap(space, userId);
     }
 
     @GetMapping("/spaces")
     public List<Map<String, Object>> listSpaces() {
         String userId = currentUserId();
         return kbService.listSpaces().stream()
-                .filter(s -> permissionService.canRead(s.getId(), userId))
-                .map(this::toSpaceMap)
+                .filter(s -> permissionService.canDiscover(s.getId(), userId))
+                .map(s -> toSpaceMap(s, userId))
                 .toList();
     }
 
@@ -53,7 +53,7 @@ public class KnowledgeBaseController {
         if (!permissionService.canRead(spaceId, userId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权访问该知识空间");
         }
-        return toSpaceMap(kbService.getSpace(spaceId));
+        return toSpaceMap(kbService.getSpace(spaceId), userId);
     }
 
     @GetMapping("/spaces/{spaceId}/documents")
@@ -192,7 +192,7 @@ public class KnowledgeBaseController {
         return userId;
     }
 
-    private Map<String, Object> toSpaceMap(KnowledgeSpace s) {
+    private Map<String, Object> toSpaceMap(KnowledgeSpace s, String userId) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", s.getId());
         m.put("name", s.getName());
@@ -201,6 +201,9 @@ public class KnowledgeBaseController {
         m.put("defaultPermission", s.getDefaultPermission());
         m.put("embeddingModel", s.getEmbeddingModel());
         m.put("createdAt", s.getCreatedAt() != null ? s.getCreatedAt().toString() : null);
+        m.put("canRead", permissionService.canRead(s.getId(), userId));
+        m.put("canWrite", permissionService.canWrite(s.getId(), userId));
+        m.put("canAdmin", permissionService.canAdmin(s.getId(), userId));
         return m;
     }
 

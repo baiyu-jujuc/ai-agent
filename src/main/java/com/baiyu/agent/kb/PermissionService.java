@@ -28,7 +28,15 @@ public class PermissionService {
         if ("public".equals(space.getVisibility())) return true;
         if (userId == null || userId.isBlank()) return false;
         Optional<SpaceMember> member = memberRepo.findBySpaceIdAndUserId(spaceId, userId);
-        return member.isPresent();
+        return member.isPresent() && !"denied".equals(member.get().getRole());
+    }
+
+    public boolean canDiscover(String spaceId, String userId) {
+        KnowledgeSpace space = spaceRepo.findById(spaceId).orElse(null);
+        if (space == null) return false;
+        if ("public".equals(space.getVisibility())) return true;
+        if (userId == null || userId.isBlank()) return false;
+        return memberRepo.findBySpaceIdAndUserId(spaceId, userId).isPresent();
     }
 
     public boolean canWrite(String spaceId, String userId) {
@@ -48,7 +56,7 @@ public class PermissionService {
 
     public SpaceMember addMember(String spaceId, String userId, String role) {
         if (!isValidRole(role)) {
-            throw new IllegalArgumentException("role 必须为 reader/writer/admin");
+            throw new IllegalArgumentException("role 必须为 reader/writer/admin/denied");
         }
         Optional<SpaceMember> existing = memberRepo.findBySpaceIdAndUserId(spaceId, userId);
         if (existing.isPresent()) {
@@ -68,6 +76,7 @@ public class PermissionService {
     }
 
     private boolean isValidRole(String role) {
-        return "reader".equals(role) || "writer".equals(role) || "admin".equals(role);
+        return "reader".equals(role) || "writer".equals(role)
+                || "admin".equals(role) || "denied".equals(role);
     }
 }

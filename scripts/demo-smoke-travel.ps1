@@ -70,6 +70,10 @@ $reader = Invoke-DemoRequest -Method POST -Path "/api/auth/login" -Body @{
     username = $ReaderUsername; password = $ReaderPassword
 }
 
+$readerSpaces = Invoke-DemoRequest -Method GET -Path "/api/kb/spaces" -Token $reader.token
+$deniedSpace = $readerSpaces | Where-Object { $_.id -eq $prepared.adminOnlySpaceId } | Select-Object -First 1
+Assert-True ($null -ne $deniedSpace -and -not $deniedSpace.canRead) "普通账号可见管理员专属空间但无读取权限"
+
 Write-Host "[2/6] 验证旅游退改 v2 问答与引用..." -ForegroundColor Cyan
 $conversationId = "travel-smoke-" + [guid]::NewGuid().ToString("N")
 $ask1 = Invoke-DemoRequest -Method POST -Path "/api/kb/spaces/$($prepared.spaceId)/ask" -Token $admin.token -Body @{
