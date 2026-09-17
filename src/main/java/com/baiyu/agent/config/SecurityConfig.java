@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -34,6 +35,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 @Configuration
 @EnableWebSecurity
+// 开启方法级安全：管理接口除了"登录了"，还要求"是管理员"。
+// 只靠路径级 authenticated() 的话，任何注册用户都能看到成本数据、改模型路由和 Prompt。
+@EnableMethodSecurity
 public class SecurityConfig implements WebMvcConfigurer {
 
     private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
@@ -73,12 +77,19 @@ public class SecurityConfig implements WebMvcConfigurer {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**", "/actuator/**").permitAll()
+                        .requestMatchers("/api/auth/**").permitAll()
+                        // Actuator 收敛：只有健康检查公开（Docker healthcheck 依赖它），
+                        // metrics / prometheus 属于运行数据，必须登录才能读
+                        .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                        .requestMatchers("/actuator/**").authenticated()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/chat/models", "/api/chat/tools", "/api/chat/strategies", "/api/chat/storage-status", "/api/agent/**").permitAll()
                         .requestMatchers("/api/kb/**").authenticated()
                         .requestMatchers("/api/chat/**").authenticated()
                         .requestMatchers("/api/rag/**").authenticated()
                         .requestMatchers("/api/tools/**").authenticated()
+                        // 管理接口（用量、路由、Prompt、评测）：必须带 JWT，
+                        // 因为它们能看到成本数据、能改路由和 Prompt
+                        .requestMatchers("/api/admin/**").authenticated()
                         .anyRequest().permitAll()
                 )
                 .addFilterBefore(new JwtAuthFilter(jwtUtil), UsernamePasswordAuthenticationFilter.class);

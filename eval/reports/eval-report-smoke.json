@@ -1,0 +1,48 @@
+{
+  "tag" : "smoke",
+  "startedAt" : "2026-09-16T14:43:20.935826800Z",
+  "finishedAt" : "2026-09-16T14:43:29.364091500Z",
+  "caseCount" : 3,
+  "hitRateAt5" : 1.0,
+  "citationAccuracy" : 1.0,
+  "avgRelevance" : 3.0,
+  "p95LatencyMs" : 2068,
+  "totalCostMicros" : 19852,
+  "avgCostMicros" : 6617,
+  "kbQaCalls" : 9,
+  "degradedCalls" : 0,
+  "cases" : [ {
+    "id" : "hb-001",
+    "spaceId" : "eval-handbook",
+    "question" : "申请生产环境只读权限时，申请内容需要包含哪些信息？",
+    "hitAt5" : true,
+    "citationHit" : true,
+    "relevance" : 3.0,
+    "latencyMs" : 2068,
+    "answerPreview" : "申请生产环境只读权限时，需要填写：**资源范围、使用原因、预计使用期限**。 [1]",
+    "retrievedDocIds" : [ "4182a235-d463-40c7-b4be-a71de4897f1e" ],
+    "expectedDocIds" : [ "4182a235-d463-40c7-b4be-a71de4897f1e" ]
+  }, {
+    "id" : "hb-002",
+    "spaceId" : "eval-handbook",
+    "question" : "生产环境的写入权限除了主管审批，还需要谁审批？",
+    "hitAt5" : true,
+    "citationHit" : true,
+    "relevance" : 3.0,
+    "latencyMs" : 1123,
+    "answerPreview" : "生产环境写入权限除直属主管审批外，还必须经过**信息安全负责人审批**。[1]",
+    "retrievedDocIds" : [ "4182a235-d463-40c7-b4be-a71de4897f1e" ],
+    "expectedDocIds" : [ "4182a235-d463-40c7-b4be-a71de4897f1e" ]
+  }, {
+    "id" : "hb-003",
+    "spaceId" : "eval-handbook",
+    "question" : "员工权限的默认有效期是多少天？到期前多久会收到提醒？",
+    "hitAt5" : true,
+    "citationHit" : true,
+    "relevance" : 3.0,
+    "latencyMs" : 1213,
+    "answerPreview" : "员工权限默认有效期为 **90 天**；到期前 **7 天**，系统会向申请人和主管发送续期提醒。[1]",
+    "retrievedDocIds" : [ "4182a235-d463-40c7-b4be-a71de4897f1e" ],
+    "expectedDocIds" : [ "4182a235-d463-40c7-b4be-a71de4897f1e" ]
+  } ]
+}

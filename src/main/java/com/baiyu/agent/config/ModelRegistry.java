@@ -32,6 +32,23 @@ public class ModelRegistry {
         return defaultModel;
     }
 
+    /** 高性能模型：复杂任务的候选主模型。 */
+    public String getProModel() {
+        return proModel;
+    }
+
+    /**
+     * 轻量模型：网关降级链的默认兜底。
+     * 改造前这个字段只用于前端展示，没有任何地方拿它做降级——这也是本次升级要补上的能力。
+     */
+    public String getFastModel() {
+        return fastModel;
+    }
+
+    public String getVisionModel() {
+        return visionModel;
+    }
+
     public List<Map<String, String>> listModels() {
         List<Map<String, String>> models = new ArrayList<>();
         models.add(modelEntry(fastModel, "DeepSeek V4 Flash (低成本)", "快速响应，适合日常对话"));

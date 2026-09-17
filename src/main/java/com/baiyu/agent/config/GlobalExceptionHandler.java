@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
@@ -42,6 +43,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
                 "error", "Forbidden",
                 "message", e.getMessage()
+        ));
+    }
+
+    /**
+     * 方法级安全（@PreAuthorize）拒绝时抛 AccessDeniedException。
+     * <p>它继承 RuntimeException，如果不单独处理，会被下面的兜底 handler 变成 500——
+     * 那样"没有管理员权限"就伪装成了"服务器出错"，既查不出问题，也会被当成漏洞扫描里的噪音。
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException e) {
+        log.warn("Access denied: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                "error", "Forbidden",
+                "message", "无权访问该接口（管理接口需要 ADMIN 角色）"
         ));
     }
 

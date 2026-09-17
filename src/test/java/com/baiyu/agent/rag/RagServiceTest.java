@@ -2,7 +2,7 @@ package com.baiyu.agent.rag;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.chat.client.ChatClient;
+import com.baiyu.agent.gateway.ModelGateway;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -19,13 +19,13 @@ class RagServiceTest {
 
     private RagService ragService;
     private VectorStore vectorStore;
-    private ChatClient chatClient;
+    private ModelGateway modelGateway;
 
     @BeforeEach
     void setUp() {
         vectorStore = mock(VectorStore.class);
-        chatClient = mock(ChatClient.class);
-        ragService = new RagService(chatClient, vectorStore);
+        modelGateway = mock(ModelGateway.class);
+        ragService = new RagService(modelGateway, vectorStore);
         org.springframework.test.util.ReflectionTestUtils.setField(ragService, "vectorStoreType", "memory");
     }
 
