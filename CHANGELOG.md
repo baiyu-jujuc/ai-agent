@@ -29,6 +29,12 @@ AI 平台升级：统一网关 + 计量 + 稳定性 + 缓存与 Prompt 治理 + 
 - **修复 Actuator 越权**：`/actuator/**` 由"全部 permitAll"收敛为**只放行 `/actuator/health`**，`metrics` 与 `prometheus` 改为需要认证（可读内存、线程、调用量与错误分布，属于运行数据）
 - 新增 ADMIN 角色的两种来源：`ADMIN_USERNAMES` 名单（注册即为 admin，默认空）与 `BOOTSTRAP_ADMIN_*` 引导管理员（幂等，且**不会给已存在的同名用户自动提权**）
 - `GlobalExceptionHandler` 新增 `AccessDeniedException` 处理：越权返回 **403**，不再被兜底 handler 吞成 500（否则"没权限"会被误报成"服务器故障"）
+- **修复语义缓存写入真实 Qdrant 时的 3 个缺陷**（单测用 mock 向量库发现不了，靠直连 Qdrant 的集成测试暴露）：
+  ① Qdrant point id 必须是 UUID，原先用 64 位 sha256 字符串会被拒绝且被 catch 吞掉；② payload 不支持 `Long`，
+  `expires_at` 改用 epoch 秒（Integer）并跳过 null metadata；③ TTL 边界由 `>` 改为 `>=`
+- 修正 Qdrant 端口口径：REST 6333 / **gRPC 6334**，Spring AI 的 `QdrantVectorStore` 走 gRPC，默认值与 Compose 统一改为 6334
+- Dockerfile 构建阶段改用 `scripts/maven-aliyun-settings.xml`（阿里云 Maven 镜像），并新增 `scripts/run-docker-from-jar.sh`：
+  本机容器无外网出口时，用"Windows 侧出 jar、容器只运行"的方式验证容器化
 
 ### Tests
 

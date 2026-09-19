@@ -15,7 +15,9 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -76,7 +78,7 @@ class SemanticCacheServiceTest {
     void lookupReturnsEmptyForExpiredEntry() {
         when(cacheVectorStore.similaritySearch(any(SearchRequest.class)))
                 .thenReturn(List.of(cachedDocument("过期答案", "k", 1,
-                        Instant.now().minusSeconds(60).toEpochMilli(), 0.99)));
+                        (int) Instant.now().minusSeconds(60).getEpochSecond(), 0.99)));
 
         assertTrue(service.lookup(SPACE, "问题", MODEL).isEmpty());
     }
@@ -114,10 +116,19 @@ class SemanticCacheServiceTest {
         assertEquals("kb_qa_plain", document.getMetadata().get(SemanticCacheService.META_PROMPT_KEY));
         assertEquals(2, document.getMetadata().get(SemanticCacheService.META_PROMPT_VERSION));
         assertEquals("答案", document.getMetadata().get(SemanticCacheService.META_ANSWER));
-        assertEquals(service.cacheKey(SPACE, MODEL, "kb_qa_plain", 2, "问题"), document.getId());
+        // 回归：Qdrant 的 point id 必须是 UUID，直接放 sha256 字符串会写入失败
+        // （真实 Qdrant 报 "UUID string too large"，mock 向量库发现不了）
+        assertDoesNotThrow(() -> java.util.UUID.fromString(document.getId()),
+                "缓存条目的 id 必须是合法 UUID，否则 Qdrant 会拒绝写入");
+        assertEquals(SemanticCacheService.pointId(service.cacheKey(SPACE, MODEL, "kb_qa_plain", 2, "问题")),
+                document.getId());
+        assertEquals(service.cacheKey(SPACE, MODEL, "kb_qa_plain", 2, "问题"),
+                document.getMetadata().get(SemanticCacheService.META_CACHE_KEY));
 
-        long expiresAt = ((Number) document.getMetadata().get(SemanticCacheService.META_EXPIRES_AT)).longValue();
-        assertTrue(expiresAt > Instant.now().toEpochMilli(), "TTL 必须落在未来");
+        Object expiresAt = document.getMetadata().get(SemanticCacheService.META_EXPIRES_AT);
+        // 回归：Qdrant payload 不支持 Long，放 Long 会在真实环境写入失败（mock 发现不了）
+        assertInstanceOf(Integer.class, expiresAt, "过期时间必须是 Integer（Qdrant payload 不支持 Long）");
+        assertTrue(((Number) expiresAt).longValue() > Instant.now().getEpochSecond(), "TTL 必须落在未来");
     }
 
     @Test
@@ -130,6 +141,16 @@ class SemanticCacheServiceTest {
                 "不同空间必须是不同的 key");
         assertNotEquals(key, service.cacheKey(SPACE, MODEL, "k", 2, "今天 天气如何"),
                 "Prompt 版本变了就不能再命中旧缓存");
+    }
+
+    @Test
+    void pointIdIsDeterministicAndValidUuid() {
+        String key = service.cacheKey(SPACE, MODEL, "k", 1, "同一个问题");
+        String first = SemanticCacheService.pointId(key);
+        String second = SemanticCacheService.pointId(key);
+
+        assertEquals(first, second, "同一个问题必须得到同一个 id（否则缓存会无限膨胀）");
+        java.util.UUID.fromString(first);   // 非法 UUID 会直接抛异常
     }
 
     @Test
@@ -172,20 +193,20 @@ class SemanticCacheServiceTest {
     }
 
     private Document cachedDocument(String answer, String promptKey, Integer version,
-                                    long expiresAt, double score) {
-        // expiresAt 用 epoch millis 传入：futureExpiry() 表示"还没过期"
+                                    int expiresAtEpochSecond, double score) {
+        // expiresAt 用 epoch 秒（Integer）传入 —— 与真实写入 Qdrant 的口径一致
         Map<String, Object> metadata = new HashMap<>();
         metadata.put(SemanticCacheService.META_SPACE_ID, SPACE);
         metadata.put(SemanticCacheService.META_MODEL_ID, MODEL);
         metadata.put(SemanticCacheService.META_PROMPT_KEY, promptKey);
         metadata.put(SemanticCacheService.META_PROMPT_VERSION, version);
         metadata.put(SemanticCacheService.META_ANSWER, answer);
-        metadata.put(SemanticCacheService.META_EXPIRES_AT, expiresAt);
+        metadata.put(SemanticCacheService.META_EXPIRES_AT, expiresAtEpochSecond);
         return Document.builder().id("doc-1").text("问题").metadata(metadata).score(score).build();
     }
 
-    private long futureExpiry() {
-        return Instant.now().plusSeconds(3600).toEpochMilli();
+    private int futureExpiry() {
+        return (int) Instant.now().plusSeconds(3600).getEpochSecond();
     }
 
     private void collectEqualityFilters(Filter.Operand operand, Map<String, String> target) {

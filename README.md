@@ -164,6 +164,10 @@ Compose 会启动四类服务：
 
 默认使用 MySQL 持久化元数据、Redis 保存会话记忆；向量检索使用内存模式，确保没有 Embedding Key 时仍能一键启动。需要 Qdrant 时按 5.5 切换。
 
+> **如果容器没有外网出口**（受限网络下常见）：`docker compose up -d --build` 会在构建阶段卡在 Maven 下载。
+> 这时可以先在 Windows 侧 `mvn -B verify`，再在 WSL 里执行 `bash scripts/run-docker-from-jar.sh`，
+> 把已构建好的 jar 打成运行时镜像并启动 app 服务（同样能验证容器化运行）。
+
 首次启动后可准备可重复演示数据并执行端到端验收：
 
 ```powershell
@@ -214,7 +218,7 @@ export EMBEDDING_API_KEY=your-embedding-key
 export EMBEDDING_BASE_URL=https://api.openai.com
 export EMBEDDING_MODEL=text-embedding-3-small
 export QDRANT_HOST=localhost
-export QDRANT_PORT=6333
+export QDRANT_PORT=6334   # gRPC 端口；6333 是 REST
 export QDRANT_INIT_SCHEMA=true
 ./mvnw spring-boot:run
 ```
@@ -269,7 +273,14 @@ npm run dev
 
 启动日志会逐项打印开关状态；如果缓存配置开着但当前模式不支持（内存模式没有 `EmbeddingModel`），日志会**明确写出原因**，而不是让你去猜"缓存为什么不生效"。
 
-语义缓存的前置条件：`VECTOR_STORE_TYPE=qdrant` 且配好 `EMBEDDING_API_KEY`。缓存使用独立 collection（默认 `semantic_cache`），与知识库的 `kb_chunks` 完全分开；若把两者配成同名，应用会在启动时直接拒绝启动。
+语义缓存的前置条件：`VECTOR_STORE_TYPE=qdrant` 且配好 `EMBEDDING_API_KEY`（DeepSeek 不提供 embedding，需要另配 OpenAI 兼容的 embedding 服务）。缓存使用独立 collection（默认 `semantic_cache`），与知识库的 `kb_chunks` 完全分开；若把两者配成同名，应用会在启动时直接拒绝启动。
+
+> **Qdrant 端口别配错**：REST 是 `6333`、gRPC 是 `6334`，而 Spring AI 的 `QdrantVectorStore` 走 gRPC，
+> 所以 `QDRANT_PORT` 要填 **6334**（填 6333 会报 `UNAVAILABLE: io exception`）。
+
+缓存的运行时行为已经在真实 Qdrant 上验证过（命中 / 跨空间隔离 / 跨模型隔离 / TTL 过期 / 清空缓存，
+见 `docs/ai-gateway-verification.md` 第 3.2 节，一键复现：`bash scripts/run-cache-it.sh`）。
+**但相似度阈值 0.92 仍是初始值**——"语义相近但措辞不同"的分数必须用真实 embedding 才能校准。
 
 用量与配置的管理接口**需要 `X-API-Key` + JWT + ADMIN 角色**（普通用户会收到 403）：
 
@@ -404,7 +415,7 @@ curl -X POST http://localhost:8080/api/chat/simple \
 | `EMBEDDING_API_KEY` | 空 | 生产向量模式所需 Embedding Key |
 | `EMBEDDING_BASE_URL` | `https://api.openai.com` | Embedding 服务地址 |
 | `EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding 模型 |
-| `QDRANT_HOST` / `QDRANT_PORT` | `localhost` / `6333` | Qdrant 地址 |
+| `QDRANT_HOST` / `QDRANT_PORT` | `localhost` / `6334` | Qdrant 地址；端口必须是 **gRPC 6334**（6333 是 REST，配错会连不上） |
 | `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | Redis 地址 |
 | `RATE_LIMIT` | `30` | 每 IP 每分钟请求上限 |
 | `ALLOWED_ORIGINS` | 本机地址 | CORS 白名单 |

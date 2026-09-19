@@ -115,16 +115,28 @@ public class SemanticCacheService implements SemanticCache {
         try {
             Map<String, Object> metadata = new HashMap<>();
             metadata.put(META_SPACE_ID, spaceId);
-            metadata.put(META_MODEL_ID, modelId);
-            metadata.put(META_PROMPT_KEY, promptKey);
-            metadata.put(META_PROMPT_VERSION, promptVersion);
+            // 注意两点（都是真实 Qdrant 上踩过的坑）：
+            //   1) metadata 里不能放 null —— QdrantValueFactory 遇到不认识的类型（包括 null）会直接抛异常；
+            //   2) 只支持 String / Integer / Double / Float / Boolean / Map / List，**Long 不支持**，
+            //      所以过期时间用 epoch 秒（Integer），不要用毫秒（Long）。
+            if (modelId != null) {
+                metadata.put(META_MODEL_ID, modelId);
+            }
+            if (promptKey != null) {
+                metadata.put(META_PROMPT_KEY, promptKey);
+            }
+            if (promptVersion != null) {
+                metadata.put(META_PROMPT_VERSION, promptVersion);
+            }
             metadata.put(META_ANSWER, answer);
             metadata.put(META_CACHE_KEY, cacheKey(spaceId, modelId, promptKey, promptVersion, question));
-            metadata.put(META_EXPIRES_AT,
-                    Instant.now().plusSeconds(properties.getCache().getTtlHours() * 3600L).toEpochMilli());
+            metadata.put(META_EXPIRES_AT, expiresAtEpochSecond());
 
+            // 注意：Qdrant 的 point id 必须是 UUID 或整数，不能直接放 64 位 sha256 字符串
+            // （真实环境里会报 "UUID string too large"，而且写入失败会被上面的 catch 吞掉，很难发现）。
+            // 这里用 sha256 派生一个确定性 UUID：同样的问题 → 同样的 id → 重复写入是覆盖，不会膨胀。
             Document document = new Document(
-                    cacheKey(spaceId, modelId, promptKey, promptVersion, question), question, metadata);
+                    pointId(cacheKey(spaceId, modelId, promptKey, promptVersion, question)), question, metadata);
             cacheVectorStore.add(List.of(document));
         } catch (Exception e) {
             log.warn("语义缓存写入失败（忽略）：{}", e.toString());
@@ -157,6 +169,11 @@ public class SemanticCacheService implements SemanticCache {
         }
     }
 
+    /** 把缓存 key 转成 Qdrant 能接受的确定性 UUID。 */
+    static String pointId(String cacheKey) {
+        return java.util.UUID.nameUUIDFromBytes(cacheKey.getBytes(StandardCharsets.UTF_8)).toString();
+    }
+
     private Filter.Expression spaceFilter(String spaceId, String modelId) {
         Filter.Expression bySpace = new Filter.Expression(Filter.ExpressionType.EQ,
                 new Filter.Key(META_SPACE_ID), new Filter.Value(spaceId));
@@ -171,9 +188,16 @@ public class SemanticCacheService implements SemanticCache {
     private boolean isExpired(Document document) {
         Object expiresAt = document.getMetadata().get(META_EXPIRES_AT);
         if (expiresAt instanceof Number number) {
-            return Instant.now().toEpochMilli() > number.longValue();
+            // 到达过期时刻即视为过期（>= 而不是 >）：
+            // 否则 TTL=0 的条目会在同一秒内被视为有效，语义上说不通
+            return Instant.now().getEpochSecond() >= number.longValue();
         }
         return false;
+    }
+
+    /** 过期时间（epoch 秒）。用 Integer 是因为 Qdrant payload 不支持 Long；够用到 2038 年。 */
+    private int expiresAtEpochSecond() {
+        return (int) Instant.now().plusSeconds(properties.getCache().getTtlHours() * 3600L).getEpochSecond();
     }
 
     GatewayProperties properties() {

@@ -88,7 +88,9 @@ spring:
     vectorstore:
       qdrant:
         host: ${QDRANT_HOST:localhost}
-        port: ${QDRANT_PORT:6333}
+        # 注意：6333 是 REST，6334 是 gRPC；Spring AI 的 QdrantVectorStore 走 gRPC 客户端，
+        # 所以这里必须是 gRPC 端口（填 6333 会报 UNAVAILABLE: io exception）
+        port: ${QDRANT_PORT:6334}
         api-key: ${QDRANT_API_KEY:}
         collection-name: ${QDRANT_COLLECTION:kb_chunks}
         use-tls: false

@@ -111,7 +111,7 @@ App is UP
 - 每次问答把 `prompt_key` + `prompt_version` 写进用量记录；
 - 单测覆盖：新建版本默认不生效、切换生效时旧版本置 inactive、未知版本报错、数据库不可用时回退内置模板。
 
-### 3.2 语义缓存（代码完成，运行时未实测）
+### 3.2 语义缓存（**已在真实 Qdrant 上跑通**，2026-09-17）
 
 已实现：
 
@@ -122,12 +122,53 @@ App is UP
 - 命中时写一条 `routeType=CACHE`、`cacheHit=true`、tokens=0、成本=0 的用量记录，便于统计"省了多少"；
 - 缓存读写失败都被吞掉，不影响主链路（有单测）。
 
-未实测的原因：本机 `.env` 里 `EMBEDDING_API_KEY` 为空、`VECTOR_STORE_TYPE=memory`，
-没有 `EmbeddingModel` 就没有缓存 Bean（启动日志会明确写出这个原因）。
-要在本机实测：配好 Embedding Key → `VECTOR_STORE_TYPE=qdrant` → 起 Qdrant（WSL 里已有容器）。
+**运行时验证方式**：`SemanticCacheQdrantTest`（7 条用例）直连一个真实的 Qdrant 容器，
+真的写向量、真的检索：
 
-**阈值 0.92 目前是初始值，不是实测校准值。** 三组对照样本需要用真实 embedding 跑一遍再定；
-没跑之前不要在简历里写"阈值经实测校准"。
+```bash
+# WSL 里（脚本会自己确保 Qdrant 在跑）
+bash "/mnt/d/AI Agent (test)/scripts/run-cache-it.sh"
+```
+
+| 用例 | 结果 |
+|---|---|
+| 同一个问题第二次问 → 命中（返回缓存答案、Prompt key/版本正确） | ✅ |
+| 同一个问题换一个知识空间问 → **不命中**（防跨空间越权） | ✅ |
+| 同一个问题换一个模型问 → 不命中 | ✅ |
+| 完全无关的问题 → 不命中 | ✅ |
+| 过期条目（TTL=0）→ 不命中 | ✅ |
+| `evictSpace` 清空该空间缓存后 → 不命中 | ✅ |
+| 缓存 collection 内部名 = `semantic_cache_it` ≠ `kb_chunks` | ✅ |
+
+#### 这一步抓到的 3 个真 bug（单测用的是 mock 向量库，全都发现不了）
+
+1. **Qdrant 的 point id 必须是 UUID**：原来用 64 位 sha256 字符串当 id，真实环境报
+   `UUID string too large`，写入直接被 catch 吞掉——功能"看起来正常"，缓存其实一条都没写进去。
+   修复：用 sha256 派生确定性 UUID（`UUID.nameUUIDFromBytes`），重复写入是覆盖而不是膨胀。
+2. **Qdrant payload 不支持 `Long`**：`expires_at` 原来写 epoch 毫秒（Long），报
+   `Unsupported Qdrant value type: class java.lang.Long`。
+   修复：改用 epoch 秒（Integer），并跳过为 null 的 metadata（null 同样会抛异常）。
+3. **TTL 边界语义**：`now > expiresAt` 会让 TTL=0 的条目在同一秒内仍然有效。
+   修复：改成 `now >= expiresAt`。
+
+三个 bug 都已补回归测试（`SemanticCacheServiceTest#storeWritesKeyTtlAndMetadata` 断言
+id 是合法 UUID、过期时间是 Integer）。
+
+#### 唯一还没做的一步：阈值校准（需要真实 embedding）
+
+本机 `.env` 里 `EMBEDDING_API_KEY` 为空，且 **DeepSeek 不提供 embedding 接口**，
+所以上面的验证用<b>确定性替身 embedding</b>（字符二元组哈希向量）驱动向量库——
+它验证的是缓存链路与隔离逻辑，"语义相近但措辞不同"的相似度分数它给不出来。
+
+**因此阈值 0.92 仍然是初始值，不是实测校准值。**
+补法：配一个 OpenAI 兼容的 embedding 服务（OpenAI / 硅基流动 / 智谱 / 阿里百炼均可）→
+`EMBEDDING_API_KEY=...` → `VECTOR_STORE_TYPE=qdrant` → 重跑 `run-cache-it.sh`，
+把 `EVAL` 里 4 组 `paraphrase-of` 与 3 组 `near-miss-of` 用例的问法当对照样本，记录实际相似度再定阈值。
+
+> 顺带修正一个配置坑：**Qdrant 的 REST 端口是 6333，gRPC 端口是 6334**，
+> 而 Spring AI 的 `QdrantVectorStore` 走的是 gRPC。仓库原来的 `QDRANT_PORT=6333` 会连不上
+> （实测报 `UNAVAILABLE: io exception`）。已把默认值、`docker-compose.yml`、`.env.example`
+> 统一改成 **6334**；你自己的 `.env` 也要跟着改。
 
 ---
 
@@ -213,6 +254,40 @@ tag 只用 `model` / `scene` / `outcome` 这类有限枚举，**没有 userId / 
 单元/集成测试 10 条（`AdminAccessSecurityTest`）：管理接口无 JWT → 403、普通用户 → 403、ADMIN → 200；
 `/actuator/health` → 200、`metrics`/`prometheus` 无 token → 403、带 JWT → 200。
 
+### 4.4 容器化运行验证（2026-09-17）
+
+```bash
+# WSL 里执行（用 Windows 侧构建好的 jar 打运行时镜像并启动 compose 的 app 服务）
+bash "/mnt/d/AI Agent (test)/scripts/run-docker-from-jar.sh"
+```
+
+实测结果：
+
+```
+aiagenttest-app-1      app       Up 21 seconds (healthy)
+aiagenttest-mysql-1    mysql     Up 7 minutes (healthy)
+aiagenttest-qdrant-1   qdrant    Up 7 minutes
+aiagenttest-redis-1    redis     Up 7 minutes (healthy)
+```
+
+容器内验证（用 `docker exec` 打）：
+
+| 检查 | 结果 |
+|---|---|
+| `/actuator/health` | `{"status":"UP"}` |
+| `/actuator/prometheus` 不带 token | **HTTP 403**（越权修复在容器里同样生效） |
+| `/api/admin/usage` 不带 token | **HTTP 403** |
+| `/api/chat/storage-status` | `memoryBackend=redis`、`vectorStoreBackend=memory` |
+| MySQL 新表 | `llm_usage_record` / `model_route_config` / `prompt_template` 三张表都建出来了 |
+| 初始化数据 | `prompt_template` 2 行（两个 key 的 v1）、`model_route_config` 2 行、`llm_usage_record` 0 行（还没发生调用） |
+| 启动日志 | 网关四层开关、路由初始化、Prompt 模板初始化、语义缓存不可用原因（memory 模式）都按预期打出 |
+
+> ⚠️ **本机 `docker compose up -d --build` 走不通**：容器**没有外网出口**
+> （实测容器内 `wget https://maven.aliyun.com/...` 直接超时），而 Dockerfile 需要在构建阶段跑
+> `mvn package` 下载依赖。所以本机采用"Windows 侧构建 jar → 容器只负责运行"的方式
+> （`scripts/run-docker-from-jar.sh`）。等容器网络可用时，`docker compose up -d --build` 照常可用
+> （Dockerfile 已配置阿里云 Maven 镜像）。
+
 ---
 
 ## 5. 未验证 / 待办（不要当成已完成）
@@ -220,12 +295,14 @@ tag 只用 `model` / `scene` / `outcome` 这类有限枚举，**没有 userId / 
 | 项 | 状态 | 怎么补 |
 |---|---|---|
 | 改造前基线评测 | 未采集 | 跑批入口是本次改造的一部分，改造前不存在；补法见 `eval/README.md` 5.3（切回改造前 commit，同一份评测集 + 同一模型 + 同一机器，tag 用 baseline） |
-| 语义缓存运行时实测（命中 / 跨空间隔离 / 拒答不缓存） | 未实测 | 配 `EMBEDDING_API_KEY` + `VECTOR_STORE_TYPE=qdrant`，起 Qdrant 后按执行文档 6.5 节跑 |
-| 缓存阈值 0.92 的实测校准 | 未做 | 三组对照样本各跑一遍，记录实际相似度再定阈值 |
+| 语义缓存运行时实测（命中 / 跨空间隔离 / TTL / 清空） | ✅ 已实测 | `scripts/run-cache-it.sh`（真实 Qdrant，7 条用例全绿）；替身 embedding 驱动，见 3.2 |
+| 缓存阈值 0.92 的实测校准 | 未做（**需要真实 embedding**） | 配 `EMBEDDING_API_KEY` 后重跑对照样本；DeepSeek 不提供 embedding，必须用第三方 OpenAI 兼容服务 |
+| 「拒答不缓存」在真实 Qdrant 上的端到端验证 | 间接覆盖 | 网关层单测已覆盖（拒答不进缓存）；与本机无 embedding Key 无关，属可补项 |
 | 计量故障注入（把表改名）端到端 | 未做 | 单元级已覆盖；端到端可用 MySQL 容器 `ALTER TABLE ... RENAME` |
 | 重试的计量粒度 | 已知局限 | 一次候选调用只记一条 ERROR/DEGRADED；若重试真的打到上游并计费，成本记录会偏低。改进：把计量下沉到每次重试尝试 |
 | 单价数值 | 假设值 | 按实际账单核对 `PRICE_DEEPSEEK_CHAT_*` |
-| `app` 容器镜像 | 未重建 | Compose 里跑的是改造前的镜像；要验证容器化运行需 `docker compose up -d --build` |
+| 容器化运行 | ✅ 已验证 | 见 4.4；本机 `--build` 因容器无外网出口走不通，改用 `scripts/run-docker-from-jar.sh`（Windows 侧出 jar，容器只运行） |
+| 容器内 `docker compose up -d --build` | ❌ 本机不可用 | 容器无外网出口 → 构建阶段下载依赖超时；网络可用后可直接用 |
 | 难例 `hard-002`（跨文档多跳） | 唯一低分（1.5/3） | 模型把"纠错流程的时限"答成了 P2 响应时限 + 复盘时限；可以再拆成两条更明确的用例，或作为"多跳仍需加强"的真实结论保留 |
 | README 测试数与简历 | 已对齐 | 统一为 **232**（2026-09-17 实测：权限加固 10 条 + 用户服务 5 条 + 播种回归 3 条） |
 
@@ -251,4 +328,7 @@ Get-Content -Encoding UTF8 target\probe\provider-usage-probe.txt
 .\scripts\verify-gateway.ps1 -Requests 6 -Port 8090
 #    这个脚本同时验证越权修复：不带 token 读 /actuator/prometheus 必须 403，
 #    带 ADMIN JWT 才能读到指标与 /api/admin/usage
+
+# 5) 语义缓存运行时实测（在 WSL 里跑，连真实 Qdrant）
+bash "/mnt/d/AI Agent (test)/scripts/run-cache-it.sh"
 ```
