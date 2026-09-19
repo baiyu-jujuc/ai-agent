@@ -76,7 +76,7 @@
 ```powershell
 cd "D:\AI Agent (test)"
 .\scripts\run-eval-local.ps1 -Tag post-upgrade -Limit 10   # 先小样本验证链路
-.\scripts\run-eval-local.ps1 -Tag post-upgrade            # 全量（67 条，会真实消耗 token）
+.\scripts\run-eval-local.ps1 -Tag post-upgrade            # 全量（77 条，会真实消耗 token）
 ```
 
 脚本会自己从 `.env` 读取密钥（**不打印、不写进命令行**），跑完在 `eval/reports/` 生成
@@ -111,7 +111,7 @@ git stash pop
 
 ## 7. 已知边界（诚实标注）
 
-- 评测集只有 67 条、3 个知识空间，**规模小**，结论只能说明"这次改动没有明显退化"，不能当通用结论；
+- 评测集只有 77 条、4 个知识空间，**规模小**，结论只能说明"这次改动没有明显退化"，不能当通用结论；
 - 打分用的是同一个模型（DeepSeek），**存在自我偏好**，所以答案相关性只适合做同版本横向对比；
 - 覆盖的是中文问答，没有多语言用例；
 - 基线（改造前）报告需要在改造前采集，见 5.3。

@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.2.0 — 2026-09-16
+## v0.2.0 — 2026-09-19
 
 AI 平台升级：统一网关 + 计量 + 稳定性 + 缓存与 Prompt 治理 + 离线评测。每一层都有独立开关，出问题可按层定位；关掉开关即退回改造前行为。
 
@@ -14,7 +14,7 @@ AI 平台升级：统一网关 + 计量 + 稳定性 + 缓存与 Prompt 治理 + 
 - **流式重试规则（L2）**：只在"还没有向下游发出任何内容"时重试；一旦开始输出就放弃重试，避免用户看到重复内容
 - **语义缓存（L3）**：新增独立 collection（默认 `semantic_cache`，与知识库 `kb_chunks` 隔离），key 含空间 / 模型 / Prompt 版本，检索时按 `space_id` 过滤；拒答不缓存；缓存 Bean 只在 `VECTOR_STORE_TYPE=qdrant` 时装配，缺失时启动日志写明原因
 - **Prompt 版本治理（L3）**：Prompt 模板入库（key + version + active），支持新建版本、切换生效、回滚；调用记录写入 `prompt_key` / `prompt_version`
-- **离线评测（L4）**：`eval/eval_set.jsonl`（67 条，含 9 条拒答题、4 组语义改写对、3 组近似干扰对、1 组跨空间同题对）；`EvalRunner` 跑批产出 Hit@5、引用准确率、答案相关性（0–3 分、同条评 2 次取平均）、P95 延迟、平均单次成本，输出 JSON + Markdown 报告
+- **离线评测（L4）**：`eval/eval_set.jsonl`（**77 条**，含 10 条拒答题、4 组语义改写对、3 组近似干扰对、1 组跨空间同题对，以及跨文档多跳、同名文档多版本与陷阱题共 10 条难例）；`EvalRunner` 跑批产出 Hit@5、引用准确率、拒答正确率、答案相关性（0–3 分、同条评 2 次取平均）、P95 延迟、平均单次成本，输出 JSON + Markdown 报告
 - **可观测（L4）**：新增 `micrometer-registry-prometheus` 与 `/actuator/prometheus`；自定义指标 `llm_call_total` / `llm_token_total` / `llm_cost_micros_total` / `llm_fallback_total` / `llm_call_duration`，tag 只用低基数维度（model / scene / outcome）
 
 ### Infrastructure
@@ -38,7 +38,7 @@ AI 平台升级：统一网关 + 计量 + 稳定性 + 缓存与 Prompt 治理 + 
 
 ### Tests
 
-- 自动化测试从 134 个增加到 232 个：新增网关计量、成本计算、降级、熔断、限流、超时、流式记账、Prompt 版本、语义缓存空间隔离、评测指标、管理接口越权与 Actuator 收敛、评测播种回归等覆盖
+- 自动化测试从 134 个增加到 240 个（其中 10 个依赖外部服务的集成用例默认跳过：3 个用量探针 + 7 个 Qdrant 集成用例），失败 0：新增网关计量、成本计算、降级、熔断、限流、超时、流式记账、Prompt 版本、语义缓存空间隔离（含直连真实 Qdrant 的集成用例）、评测指标、管理接口越权与 Actuator 收敛、评测播种回归等覆盖
 - Phase 0 探针测试 `ProviderUsageProbeTest` 默认跳过（加 `-Dprobe.provider.usage=true` 才真实调用模型）
 
 ## v0.1.0 — 2026-09-07

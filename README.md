@@ -55,7 +55,7 @@
 | 稳定性控制 | Resilience4j **按模型**限流 + 熔断 + 重试 + 网关层超时（默认 30s，短于 HTTP 层 60s），主模型失败自动降级到备用模型，全部失败返回可读兜底话术 | ✅ |
 | 语义缓存 | 独立 `semantic_cache` collection + 空间与 Prompt 版本隔离 + 拒答不缓存（需 `VECTOR_STORE_TYPE=qdrant` 并有 Embedding） | ✅ |
 | Prompt 版本管理 | Prompt 模板入库（key + version + active），支持切换与回滚，调用记录带 `prompt_key` / `prompt_version` | ✅ |
-| 离线评测 | `eval/eval_set.jsonl`（67 条，含拒答题与语义近似对照）；跑批产出 Hit@5、引用准确率、答案相关性、P95 延迟、平均单次成本 | ✅ |
+| 离线评测 | `eval/eval_set.jsonl`（77 条，含拒答题、跨文档多跳、同名文档多版本与语义近似对照）；跑批产出 Hit@5、引用准确率、拒答正确率、答案相关性、P95 延迟、平均单次成本 | ✅ |
 | 可观测指标 | Micrometer 自定义指标（调用数 / token / 成本 / 降级 / 延迟）+ `/actuator/prometheus`，tag 只用低基数维度 | ✅ |
 
 ---
@@ -299,7 +299,7 @@ Actuator 的暴露面：只有 `/actuator/health` 公开（Docker healthcheck �
 
 ```powershell
 .\scripts\run-eval-local.ps1 -Tag post-upgrade -Limit 10   # 先跑 10 条验证链路
-.\scripts\run-eval-local.ps1 -Tag post-upgrade             # 全量 67 条
+.\scripts\run-eval-local.ps1 -Tag post-upgrade             # 全量 77 条
 ```
 
 报告输出到 `eval/reports/eval-report-<tag>.json` 与同名 `.md`；评测集与指标定义见 `eval/README.md`。
@@ -446,7 +446,7 @@ curl -X POST http://localhost:8080/api/chat/simple \
 ./mvnw clean verify --no-transfer-progress
 ```
 
-当前仓库包含 232 个自动化测试，覆盖：
+当前仓库共 240 个自动化测试（其中 10 个依赖外部服务的集成用例默认跳过），覆盖：
 
 - ChatController 参数与状态码
 - KB 服务、KbQaService 问答、消息持久化与多轮上下文
@@ -488,7 +488,6 @@ curl -X POST http://localhost:8080/api/chat/simple \
 - ✅ 浅色 DeepSeek 风格中文 Web UI
 - ✅ 模型注册与知识库问答主链路
 - ✅ GitHub Actions CI、Dockerfile、Compose、Maven Wrapper
-- ✅ 133 个自动化测试（不依赖外网 LLM）
 - ✅ 文档分块（中文单字分词 + 英文 token）、PDF/Markdown 读取
 - ✅ 文档版本管理与回滚（含向量索引同步）
 - ✅ 统一异常处理、Actuator 最小暴露
@@ -498,9 +497,9 @@ curl -X POST http://localhost:8080/api/chat/simple \
 - ✅ AI 网关（`ModelGateway` 收口 9 处模型调用）+ Token 计量与整数微元成本 + 单价快照
 - ✅ Resilience4j 按模型限流 / 熔断 / 重试 / 网关层超时 + 备用模型降级 + 可读兜底话术
 - ✅ 语义缓存（独立 collection + 空间隔离 + 拒答不缓存）与 Prompt 模板版本管理
-- ✅ 离线评测跑批（67 条评测集 → Hit@5 / 引用准确率 / 拒答正确率 / 相关性 / P95 / 平均成本）
+- ✅ 离线评测跑批（77 条评测集 → Hit@5 / 引用准确率 / 拒答正确率 / 相关性 / P95 / 平均成本）
 - ✅ Prometheus 指标端点与自定义低基数指标（调用数 / token / 成本 / 降级 / 延迟）
-- ✅ 232 个自动化测试（默认不访问外网 LLM；用量探针需显式开启）
+- ✅ 共 240 个自动化测试，其中 10 个依赖外部服务的集成用例默认跳过（3 个用量探针 + 7 个 Qdrant 集成用例），失败 0；默认不访问外网 LLM
 - ✅ 管理接口与 Actuator 的越权修复（`/api/admin/**` 需 ADMIN 角色；`/actuator/**` 只放行 health）
 - ✅ 页面文档上传 UI（拖拽/选择上传、解析状态、版本列表、回滚）
 - ✅ 知识空间问答主链路打通（选空间 → /api/kb/spaces/{id}/ask）
