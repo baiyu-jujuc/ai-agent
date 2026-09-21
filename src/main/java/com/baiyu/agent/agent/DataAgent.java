@@ -1,7 +1,7 @@
 package com.baiyu.agent.agent;
 
+import com.baiyu.agent.gateway.ModelGateway;
 import com.baiyu.agent.tool.ToolComponent;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Component;
 
@@ -12,8 +12,8 @@ import java.util.stream.Collectors;
 @Component("data")
 public class DataAgent extends AbstractAgent {
 
-    public DataAgent(ChatClient chatClient, List<ToolComponent> allTools) {
-        super(chatClient, """
+    public DataAgent(ModelGateway modelGateway, List<ToolComponent> allTools) {
+        super(modelGateway, """
                 你是一个数据分析 Agent。你的能力：
                 - 分析数据并提供洞察
                 - 生成 SQL 查询

@@ -1,13 +1,18 @@
 package com.baiyu.agent.kb;
 
-import com.baiyu.agent.config.ChatModelFactory;
+import com.baiyu.agent.gateway.CallScene;
+import com.baiyu.agent.gateway.GatewayProperties;
+import com.baiyu.agent.gateway.GatewayRequest;
+import com.baiyu.agent.gateway.GatewayResponse;
+import com.baiyu.agent.gateway.ModelGateway;
+import com.baiyu.agent.gateway.PromptTemplateService;
+import com.baiyu.agent.gateway.repository.PromptTemplateRepository;
 import com.baiyu.agent.kb.entity.Chunk;
 import com.baiyu.agent.kb.entity.KbMessage;
 import com.baiyu.agent.kb.repository.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
@@ -24,8 +29,7 @@ class KbQaServiceTest {
     private CitationRepository citationRepo;
     private FeedbackRepository feedbackRepo;
     private KbMessageRepository messageRepo;
-    private ChatClient chatClient;
-    private ChatModelFactory chatModelFactory;
+    private ModelGateway modelGateway;
 
     @BeforeEach
     void setUp() {
@@ -33,14 +37,21 @@ class KbQaServiceTest {
         citationRepo = mock(CitationRepository.class);
         feedbackRepo = mock(FeedbackRepository.class);
         messageRepo = mock(KbMessageRepository.class);
-        chatClient = mock(ChatClient.class);
-        chatModelFactory = mock(ChatModelFactory.class);
+        modelGateway = mock(ModelGateway.class);
 
         when(citationRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(feedbackRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(messageRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(modelGateway.call(any(GatewayRequest.class)))
+                .thenReturn(gatewayResponse("Java virtual threads are lightweight [1]"));
 
-        qaService = new KbQaService(kbService, citationRepo, feedbackRepo, messageRepo, chatClient, chatModelFactory, false);
+        // Prompt 模板服务用"内置模板"模式，避免单测依赖数据库
+        GatewayProperties gatewayProperties = new GatewayProperties();
+        gatewayProperties.setPromptStoreEnabled(false);
+        PromptTemplateService promptTemplateService =
+                new PromptTemplateService(mock(PromptTemplateRepository.class), gatewayProperties);
+        qaService = new KbQaService(kbService, citationRepo, feedbackRepo, messageRepo,
+                modelGateway, promptTemplateService);
     }
 
     @Test
@@ -52,13 +63,6 @@ class KbQaServiceTest {
 
         when(kbService.searchChunks("space-001", "What are virtual threads?", 5))
                 .thenReturn(List.of(c1, c2));
-
-        ChatClient.ChatClientRequestSpec spec = mock(ChatClient.ChatClientRequestSpec.class);
-        ChatClient.CallResponseSpec callSpec = mock(ChatClient.CallResponseSpec.class);
-        when(chatClient.prompt()).thenReturn(spec);
-        when(spec.user(any(String.class))).thenReturn(spec);
-        when(spec.call()).thenReturn(callSpec);
-        when(callSpec.content()).thenReturn("Java virtual threads are lightweight [1]");
 
         KbQaService.QaResult result = qaService.ask("space-001", "What are virtual threads?", "space-001:default", "user-001");
 
@@ -136,13 +140,6 @@ class KbQaServiceTest {
         when(kbService.searchChunks("space-001", "What are virtual threads?", 5))
                 .thenReturn(List.of(c1));
 
-        ChatClient.ChatClientRequestSpec spec = mock(ChatClient.ChatClientRequestSpec.class);
-        ChatClient.CallResponseSpec callSpec = mock(ChatClient.CallResponseSpec.class);
-        when(chatClient.prompt()).thenReturn(spec);
-        when(spec.user(any(String.class))).thenReturn(spec);
-        when(spec.call()).thenReturn(callSpec);
-        when(callSpec.content()).thenReturn("Java virtual threads are lightweight [1]");
-
         KbQaService.QaResult result = qaService.ask("space-001", "What are virtual threads?", "conv-msg-test", "user-001");
 
         // Verify two messages saved: user + assistant
@@ -217,13 +214,6 @@ class KbQaServiceTest {
         when(kbService.searchChunks("space-001", "question?", 5))
                 .thenReturn(List.of(c1));
 
-        ChatClient.ChatClientRequestSpec spec = mock(ChatClient.ChatClientRequestSpec.class);
-        ChatClient.CallResponseSpec callSpec = mock(ChatClient.CallResponseSpec.class);
-        when(chatClient.prompt()).thenReturn(spec);
-        when(spec.user(any(String.class))).thenReturn(spec);
-        when(spec.call()).thenReturn(callSpec);
-        when(callSpec.content()).thenReturn("answer");
-
         KbQaService.QaResult result = qaService.ask("space-001", "question?", "conv-cit", "user-001");
 
         // The result messageId should match the assistant message and citations
@@ -252,72 +242,55 @@ class KbQaServiceTest {
         when(kbService.searchChunks("space-001", "启动后应该访问哪个端口", 5))
                 .thenReturn(List.of(c1));
 
-        ChatClient.ChatClientRequestSpec spec = mock(ChatClient.ChatClientRequestSpec.class);
-        ChatClient.CallResponseSpec callSpec = mock(ChatClient.CallResponseSpec.class);
-        when(chatClient.prompt()).thenReturn(spec);
-        when(spec.user(any(String.class))).thenReturn(spec);
-        when(spec.call()).thenReturn(callSpec);
-        when(callSpec.content()).thenReturn("启动后访问端口 8080 [1]");
-
         qaService.ask("space-001", "启动后应该访问哪个端口", "conv-multi", "user-001");
 
-        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
-        verify(spec).user(promptCaptor.capture());
+        ArgumentCaptor<GatewayRequest> promptCaptor = ArgumentCaptor.forClass(GatewayRequest.class);
+        verify(modelGateway).call(promptCaptor.capture());
 
-        String prompt = promptCaptor.getValue();
+        String prompt = promptCaptor.getValue().userPrompt();
         assertTrue(prompt.contains("对话历史"), "Prompt should contain conversation history section");
         assertTrue(prompt.contains("部署命令"), "Prompt should contain prior user message content");
         assertTrue(prompt.contains("mvn spring-boot:run"), "Prompt should contain prior assistant response");
     }
 
-    // P3-8 #5: Verify model API key is ignored when allow-client-model-key=false
+    // P3-8 #5 改造后：KbQaService 只负责把客户端 Key 透传给网关，
+    // "到底用不用这个 Key"由网关按 allow-client-model-key 决定（覆盖在 ModelGatewayImplTest）
     @Test
-    void modelApiKeyIgnoredWhenDisabled() {
+    void modelApiKeyForwardedToGateway() {
         Chunk c1 = new Chunk("ver-001", "space-001", "doc-001", "some content", 0);
         ReflectionTestUtils.setField(c1, "id", "chunk-001");
         when(kbService.searchChunks(any(), any(), anyInt()))
                 .thenReturn(List.of(c1));
 
-        ChatClient.ChatClientRequestSpec spec = mock(ChatClient.ChatClientRequestSpec.class);
-        ChatClient.CallResponseSpec callSpec = mock(ChatClient.CallResponseSpec.class);
-        when(chatClient.prompt()).thenReturn(spec);
-        when(spec.user(any(String.class))).thenReturn(spec);
-        when(spec.call()).thenReturn(callSpec);
-        when(callSpec.content()).thenReturn("answer [1]");
-
-        // allowClientModelKey=false (default in setUp)
         qaService.ask("space-001", "question", "conv-key-test", "user-001", "sk-user-provided-key");
 
-        // chatModelFactory.createChatModel should never be called when disabled
-        verify(chatModelFactory, never()).createChatModel(any());
+        ArgumentCaptor<GatewayRequest> captor = ArgumentCaptor.forClass(GatewayRequest.class);
+        verify(modelGateway).call(captor.capture());
+        assertEquals("sk-user-provided-key", captor.getValue().clientApiKey());
     }
 
-    // P3-8 #5: Verify model API key is used when allow-client-model-key=true
+    // 计量与成本按场景/空间/会话分组，这几个维度漏一个就没法算账
     @Test
-    void modelApiKeyUsedWhenEnabled() {
-        KbQaService enabledService = new KbQaService(
-                kbService, citationRepo, feedbackRepo, messageRepo, chatClient, chatModelFactory, true);
-
+    void gatewayRequestCarriesSceneAndIdentifiers() {
         Chunk c1 = new Chunk("ver-001", "space-001", "doc-001", "some content", 0);
         ReflectionTestUtils.setField(c1, "id", "chunk-001");
         when(kbService.searchChunks(any(), any(), anyInt()))
                 .thenReturn(List.of(c1));
 
-        org.springframework.ai.chat.model.ChatModel perRequestModel = mock(org.springframework.ai.chat.model.ChatModel.class);
-        when(chatModelFactory.createChatModel("sk-user-provided-key"))
-                .thenReturn(perRequestModel);
+        qaService.ask("space-001", "question", "conv-meta", "user-001");
 
-        // When model key is provided and enabled, chatModelFactory should be called
-        // The ChatClient.builder(perRequestModel).build() creates a real client,
-        // but since perRequestModel is a mock, calling prompt() will return null → NPE
-        // This is acceptable: we just verify chatModelFactory.createChatModel was called
-        try {
-            enabledService.ask("space-001", "question", "conv-key-enabled", "user-001", "sk-user-provided-key");
-        } catch (Exception ignored) {
-            // Expected: mock ChatModel can't actually process prompts
-        }
+        ArgumentCaptor<GatewayRequest> captor = ArgumentCaptor.forClass(GatewayRequest.class);
+        verify(modelGateway).call(captor.capture());
+        GatewayRequest request = captor.getValue();
+        assertEquals(CallScene.KB_QA, request.scene());
+        assertEquals("space-001", request.spaceId());
+        assertEquals("user-001", request.userId());
+        assertEquals("conv-meta", request.conversationId());
+    }
 
-        verify(chatModelFactory).createChatModel("sk-user-provided-key");
+    private static GatewayResponse gatewayResponse(String content) {
+        return new GatewayResponse(content, "deepseek-test", GatewayResponse.ROUTE_PRIMARY, false,
+                "PROVIDER", 12, 8, 0L, 5L, null, null);
     }
 
     // P3-final: history must keep the most recent 20 messages, not the first 20
@@ -340,18 +313,11 @@ class KbQaServiceTest {
         when(kbService.searchChunks("space-001", "latest question", 5))
                 .thenReturn(List.of(chunk));
 
-        ChatClient.ChatClientRequestSpec spec = mock(ChatClient.ChatClientRequestSpec.class);
-        ChatClient.CallResponseSpec callSpec = mock(ChatClient.CallResponseSpec.class);
-        when(chatClient.prompt()).thenReturn(spec);
-        when(spec.user(any(String.class))).thenReturn(spec);
-        when(spec.call()).thenReturn(callSpec);
-        when(callSpec.content()).thenReturn("answer [1]");
-
         qaService.ask("space-001", "latest question", "conv-history", "user-001");
 
-        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
-        verify(spec).user(promptCaptor.capture());
-        String prompt = promptCaptor.getValue();
+        ArgumentCaptor<GatewayRequest> promptCaptor = ArgumentCaptor.forClass(GatewayRequest.class);
+        verify(modelGateway).call(promptCaptor.capture());
+        String prompt = promptCaptor.getValue().userPrompt();
         assertTrue(prompt.contains("old answer 24"), "Prompt should contain the newest history entry");
         assertTrue(prompt.contains("old question 24"), "Prompt should contain the newest user entry");
         assertFalse(prompt.contains("old question 0"), "Prompt should not contain the oldest history entry");

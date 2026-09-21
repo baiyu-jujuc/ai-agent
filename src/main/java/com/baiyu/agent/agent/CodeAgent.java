@@ -1,7 +1,7 @@
 package com.baiyu.agent.agent;
 
+import com.baiyu.agent.gateway.ModelGateway;
 import com.baiyu.agent.tool.ToolComponent;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Component;
 
@@ -12,8 +12,8 @@ import java.util.stream.Collectors;
 @Component("code")
 public class CodeAgent extends AbstractAgent {
 
-    public CodeAgent(ChatClient chatClient, List<ToolComponent> allTools) {
-        super(chatClient, """
+    public CodeAgent(ModelGateway modelGateway, List<ToolComponent> allTools) {
+        super(modelGateway, """
                 你是一个代码专家 Agent。你的能力：
                 - 编写干净、可运行的 Java/Python/JavaScript 代码
                 - 调试和修复代码问题

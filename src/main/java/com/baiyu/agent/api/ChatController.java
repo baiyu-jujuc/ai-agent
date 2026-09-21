@@ -2,19 +2,17 @@ package com.baiyu.agent.api;
 
 import com.baiyu.agent.agent.Agent;
 import com.baiyu.agent.agent.CoordinatorAgent;
-import com.baiyu.agent.config.ChatModelFactory;
 import com.baiyu.agent.config.ModelRegistry;
+import com.baiyu.agent.gateway.CallScene;
+import com.baiyu.agent.gateway.GatewayRequest;
+import com.baiyu.agent.gateway.ModelGateway;
 import com.baiyu.agent.memory.ChatMemoryService;
 import com.baiyu.agent.orchestrator.OrchestrationResult;
 import com.baiyu.agent.orchestrator.OrchestrationStrategy;
 import com.baiyu.agent.rag.RagService;
 import com.baiyu.agent.tool.FunctionCallingService;
 import com.baiyu.agent.tool.ToolRegistry;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.prompt.ChatOptions;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
@@ -26,8 +24,7 @@ import java.util.*;
 @RequestMapping("/api/chat")
 public class ChatController {
 
-    private final ChatClient chatClient;
-    private final ChatModel chatModel;
+    private final ModelGateway modelGateway;
     private final CoordinatorAgent coordinatorAgent;
     private final Map<String, Agent> agents;
     private final ChatMemoryService memoryService;
@@ -36,10 +33,8 @@ public class ChatController {
     private final RagService ragService;
     private final Map<String, OrchestrationStrategy> strategies;
     private final ModelRegistry modelRegistry;
-    private final ChatModelFactory chatModelFactory;
-    private final boolean allowClientModelKey;
 
-    public ChatController(ChatModel chatModel, ChatClient chatClient,
+    public ChatController(ModelGateway modelGateway,
                          CoordinatorAgent coordinatorAgent,
                          Map<String, Agent> agents,
                          ChatMemoryService memoryService,
@@ -47,11 +42,8 @@ public class ChatController {
                          FunctionCallingService functionCallingService,
                          RagService ragService,
                          Map<String, OrchestrationStrategy> strategies,
-                         ModelRegistry modelRegistry,
-                         ChatModelFactory chatModelFactory,
-                         @Value("${agent.security.allow-client-model-key:false}") boolean allowClientModelKey) {
-        this.chatModel = chatModel;
-        this.chatClient = chatClient;
+                         ModelRegistry modelRegistry) {
+        this.modelGateway = modelGateway;
         this.coordinatorAgent = coordinatorAgent;
         this.agents = agents;
         this.memoryService = memoryService;
@@ -60,16 +52,6 @@ public class ChatController {
         this.ragService = ragService;
         this.strategies = strategies;
         this.modelRegistry = modelRegistry;
-        this.chatModelFactory = chatModelFactory;
-        this.allowClientModelKey = allowClientModelKey;
-    }
-
-    private ChatClient resolveClient(String modelApiKey) {
-        if (!allowClientModelKey || modelApiKey == null || modelApiKey.isBlank()) {
-            return chatClient;
-        }
-        ChatModel perRequestModel = chatModelFactory.createChatModel(modelApiKey);
-        return ChatClient.builder(perRequestModel).build();
     }
 
     private static final int MAX_MESSAGE_LENGTH = 10000;
@@ -93,15 +75,16 @@ public class ChatController {
 
         String response;
         try {
-            ChatClient activeClient = resolveClient(modelApiKey);
             if (useTools) {
-                response = functionCallingService.executeWithTools(activeClient, message, model, history);
+                response = functionCallingService.executeWithTools(message, model, history, modelApiKey);
             } else {
-                response = activeClient.prompt()
+                response = modelGateway.call(GatewayRequest.builder(CallScene.CHAT_SIMPLE)
                         .messages(history)
-                        .user(message)
-                        .options(ChatOptions.builder().model(model).build())
-                        .call()
+                        .userPrompt(message)
+                        .modelOverride(model)
+                        .conversationId(conversationId)
+                        .clientApiKey(modelApiKey)
+                        .build())
                         .content();
             }
             if (response == null || response.isBlank()) {
@@ -152,24 +135,23 @@ public class ChatController {
         if (useToolPath) {
             // B3: Tool/agent path — blocking, result as single event
             Agent targetAgent = agents.getOrDefault(agent, coordinatorAgent);
-            ChatClient activeClient = resolveClient(modelApiKey);
             try {
                 String result = useTools
-                        ? functionCallingService.executeWithTools(activeClient, message, resolvedModel, history)
-                        : targetAgent.executeWithModel(message, resolvedModel, history, activeClient);
+                        ? functionCallingService.executeWithTools(message, resolvedModel, history, modelApiKey)
+                        : targetAgent.executeWithModel(message, resolvedModel, history, modelApiKey);
                 contentFlux = Flux.just(result == null ? "" : result);
             } catch (Exception e) {
                 contentFlux = Flux.just("Agent 执行失败，请稍后重试。");
             }
         } else {
-            // B3: True streaming path via chatClient
-            ChatClient activeClient = resolveClient(modelApiKey);
-            contentFlux = activeClient.prompt()
+            // B3: True streaming path via 网关（计量在流结束时用 doFinally 落库）
+            contentFlux = modelGateway.stream(GatewayRequest.builder(CallScene.CHAT_STREAM)
                     .messages(history)
-                    .user(message)
-                    .options(ChatOptions.builder().model(resolvedModel).build())
-                    .stream()
-                    .content();
+                    .userPrompt(message)
+                    .modelOverride(resolvedModel)
+                    .conversationId(conversationId)
+                    .clientApiKey(modelApiKey)
+                    .build());
         }
 
         return contentFlux
@@ -209,8 +191,7 @@ public class ChatController {
 
         String response;
         try {
-            ChatClient activeClient = resolveClient(modelApiKey);
-            response = targetAgent.executeWithModel(message, model, history, activeClient);
+            response = targetAgent.executeWithModel(message, model, history, modelApiKey);
         } catch (Exception e) {
             response = "Agent 执行失败，请稍后重试。";
         }

@@ -1,10 +1,11 @@
 package com.baiyu.agent.agent;
 
+import com.baiyu.agent.gateway.CallScene;
+import com.baiyu.agent.gateway.GatewayRequest;
+import com.baiyu.agent.gateway.ModelGateway;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -18,8 +19,8 @@ public class CoordinatorAgent extends AbstractAgent {
 
     private final Map<String, Agent> agents;
 
-    public CoordinatorAgent(ChatClient chatClient, Map<String, Agent> agents) {
-        super(chatClient, """
+    public CoordinatorAgent(ModelGateway modelGateway, Map<String, Agent> agents) {
+        super(modelGateway, """
                 你是一个协调智能体（Coordinator Agent）。你的职责：
                 1. 分析用户请求
                 2. 判断应由哪个专家 Agent 处理
@@ -48,34 +49,36 @@ public class CoordinatorAgent extends AbstractAgent {
 
     @Override
     public String executeWithModel(String input, String model, List<Message> context) {
-        return executeWithModel(input, model, context, chatClient);
+        return executeWithModel(input, model, context, null);
     }
 
     @Override
-    public String executeWithModel(String input, String model, List<Message> context, ChatClient client) {
-        String routingDecision = determineAgent(input, client);
+    public String executeWithModel(String input, String model, List<Message> context, String clientApiKey) {
+        String routingDecision = determineAgent(input, clientApiKey);
         Agent targetAgent = agents.getOrDefault(routingDecision, this);
 
         if (targetAgent == this) {
-            return super.executeWithModel(input, model, context, client);
+            return super.executeWithModel(input, model, context, clientApiKey);
         }
 
         log.info("Routing to agent: {} for input: {}", routingDecision,
                 input.length() > 50 ? input.substring(0, 50) + "..." : input);
-        return targetAgent.executeWithModel(input, model, context, client);
+        return targetAgent.executeWithModel(input, model, context, clientApiKey);
     }
 
-    private String determineAgent(String input) {
-        return determineAgent(input, chatClient);
-    }
-
-    private String determineAgent(String input, ChatClient client) {
+    /**
+     * 路由决策会额外消耗一次 LLM 调用——这就是"隐藏成本"。
+     * 这次调用同样走网关、同样落一条 {@code AGENT_ROUTING} 计量记录，
+     * 所以"用户问一句话产生了 2 次计费调用"是能被数据证实的，而不是靠猜。
+     */
+    private String determineAgent(String input, String clientApiKey) {
         if (input == null || input.isBlank()) {
             return "coordinator";
         }
         try {
-            RoutingDecision decision = client.prompt()
-                    .system("""
+            RoutingDecision decision = modelGateway.callEntity(
+                    GatewayRequest.builder(CallScene.AGENT_ROUTING)
+                            .systemPrompt("""
                             你是一个意图分类器。根据用户请求判断应由哪个专家处理，只输出 JSON，不要解释。
                             可选值:
                             - code: 写代码、调试、报错分析、编程技术问题
@@ -83,10 +86,11 @@ public class CoordinatorAgent extends AbstractAgent {
                             - data: 数据分析、SQL/数据库、统计、报表
                             - coordinator: 闲聊或其他不属于以上类型的请求
                             """)
-                    .user(input)
-                    .options(ChatOptions.builder().temperature(0.0).build())
-                    .call()
-                    .entity(RoutingDecision.class);
+                            .userPrompt(input)
+                            .clientApiKey(clientApiKey)
+                            .temperature(0.0)
+                            .build(),
+                    RoutingDecision.class);
 
             if (decision != null && decision.agent() != null) {
                 String name = decision.agent().trim().toLowerCase(Locale.ROOT);

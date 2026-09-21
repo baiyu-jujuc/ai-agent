@@ -1,23 +1,28 @@
 package com.baiyu.agent.agent;
 
-import org.springframework.ai.chat.client.ChatClient;
+import com.baiyu.agent.gateway.CallScene;
+import com.baiyu.agent.gateway.GatewayRequest;
+import com.baiyu.agent.gateway.ModelGateway;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.chat.prompt.ChatOptions;
-import org.springframework.ai.chat.prompt.Prompt;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
+/**
+ * 所有 Agent 的公共执行体——改造时杠杆最大的一处：
+ * 改这一个类，等于收口了 CodeAgent / DataAgent / ReActAgent / ResearchAgent 等全部子类。
+ */
 public abstract class AbstractAgent implements Agent {
 
-    protected final ChatClient chatClient;
+    protected final ModelGateway modelGateway;
     protected final String systemPrompt;
     protected Object[] agentTools = new Object[0];
 
-    protected AbstractAgent(ChatClient chatClient, String systemPrompt) {
-        this.chatClient = chatClient;
+    protected AbstractAgent(ModelGateway modelGateway, String systemPrompt) {
+        this.modelGateway = modelGateway;
         this.systemPrompt = systemPrompt;
     }
 
@@ -32,11 +37,11 @@ public abstract class AbstractAgent implements Agent {
 
     @Override
     public String executeWithModel(String input, String model, List<Message> context) {
-        return executeWithModel(input, model, context, chatClient);
+        return executeWithModel(input, model, context, null);
     }
 
     @Override
-    public String executeWithModel(String input, String model, List<Message> context, ChatClient client) {
+    public String executeWithModel(String input, String model, List<Message> context, String clientApiKey) {
         List<Message> messages = new ArrayList<>();
         messages.add(new SystemMessage(systemPrompt));
         if (context != null) {
@@ -44,13 +49,13 @@ public abstract class AbstractAgent implements Agent {
         }
         messages.add(new UserMessage(input));
 
-        var spec = client.prompt(new Prompt(messages));
-        if (model != null && !model.isEmpty()) {
-            spec.options(ChatOptions.builder().model(model).build());
-        }
+        GatewayRequest.Builder request = GatewayRequest.builder(CallScene.AGENT_EXECUTE)
+                .messages(messages)
+                .modelOverride(model)
+                .clientApiKey(clientApiKey);
         if (agentTools.length > 0) {
-            spec.tools(agentTools);
+            request.tools(Arrays.asList(agentTools));
         }
-        return spec.call().content();
+        return modelGateway.call(request.build()).content();
     }
 }

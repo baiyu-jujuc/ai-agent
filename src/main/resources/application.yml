@@ -88,7 +88,9 @@ spring:
     vectorstore:
       qdrant:
         host: ${QDRANT_HOST:localhost}
-        port: ${QDRANT_PORT:6333}
+        # 注意：6333 是 REST，6334 是 gRPC；Spring AI 的 QdrantVectorStore 走 gRPC 客户端，
+        # 所以这里必须是 gRPC 端口（填 6333 会报 UNAVAILABLE: io exception）
+        port: ${QDRANT_PORT:6334}
         api-key: ${QDRANT_API_KEY:}
         collection-name: ${QDRANT_COLLECTION:kb_chunks}
         use-tls: false
@@ -99,7 +101,8 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        # 升级后新增 metrics / prometheus：L4 用它验证自定义指标（llm_call_total 等）
+        include: ${MANAGEMENT_EXPOSURE:health,info,metrics,prometheus}
   endpoint:
     health:
       show-details: when-authorized
@@ -138,6 +141,12 @@ agent:
     # JWT 密钥（生产环境必须修改）
     jwt-secret: ${JWT_SECRET:default-jwt-secret-change-in-production-at-least-32-chars}
     jwt-expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+    # 管理接口（/api/admin/**）需要 ADMIN 角色。两种获得方式：
+    #   1) admin-usernames：名单里的用户名注册后即为 admin（默认空，避免"谁先注册谁管理员"）
+    #   2) bootstrap-admin-username / -password：启动时创建引导管理员（已存在则不自动提权）
+    admin-usernames: ${ADMIN_USERNAMES:}
+    bootstrap-admin-username: ${BOOTSTRAP_ADMIN_USERNAME:}
+    bootstrap-admin-password: ${BOOTSTRAP_ADMIN_PASSWORD:}
   # 对话记忆预算：超出后裁剪最早的消息 / 淘汰最久未用的会话
   memory:
     max-tokens: ${MEMORY_MAX_TOKENS:8000}
@@ -149,6 +158,49 @@ agent:
     vector-store: ${VECTOR_STORE_TYPE:memory}
     # memory: memory (dev, no Docker) | redis (prod, needs Docker)
     memory: ${MEMORY_TYPE:memory}
+
+  # 模型调用网关：L1 计量 / L2 稳定性 / L3 缓存与 Prompt 治理 / L4 指标
+  # 每一层都有独立开关；出问题时按开关逐个排除，不要一次全开再 debug。
+  gateway:
+    enabled: ${GATEWAY_ENABLED:true}
+    # L1：写用量记录（关闭后只是不记账，主链路行为不变）
+    metering-enabled: ${GATEWAY_METERING_ENABLED:true}
+    # L2：限流/熔断/重试（默认关闭：先让计量跑对，再开稳定性）
+    resilience-enabled: ${GATEWAY_RESILIENCE_ENABLED:false}
+    # L4：Micrometer 指标
+    metrics-enabled: ${GATEWAY_METRICS_ENABLED:true}
+    # L3：Prompt 模板走数据库版本管理（关闭后回退到代码里的内置模板）
+    prompt-store-enabled: ${GATEWAY_PROMPT_STORE_ENABLED:true}
+    # 网关层超时：必须明显小于 AiConfig 里 HTTP 层的 60s，否则 HTTP 层先超时，熔断统计不到失败
+    timeout-seconds: ${GATEWAY_TIMEOUT_SECONDS:30}
+    rate-limit-per-model-per-second: ${GATEWAY_RATE_LIMIT_PER_MODEL_PER_SECOND:5}
+    retry-max-attempts: ${GATEWAY_RETRY_MAX_ATTEMPTS:2}
+    cache:
+      # 语义缓存需要 EmbeddingModel（仅 VECTOR_STORE_TYPE=qdrant 时存在）；
+      # memory 模式下即使这里是 true，缓存 Bean 也不存在，网关照常工作，只是不命中。
+      enabled: ${GATEWAY_CACHE_ENABLED:true}
+      similarity-threshold: ${GATEWAY_CACHE_THRESHOLD:0.92}
+      ttl-hours: ${GATEWAY_CACHE_TTL_HOURS:24}
+      collection: ${GATEWAY_CACHE_COLLECTION:semantic_cache}
+    # 路由：主模型 + 逗号分隔的降级链（L2 熔断/失败后按顺序降级）
+    routes:
+      kb_qa:
+        primary: ${PRO_MODEL:deepseek-v4-pro}
+        fallbacks: ${FAST_MODEL:deepseek-v4-flash}
+      default_chat:
+        primary: ${DEFAULT_MODEL:deepseek-v4-flash}
+        fallbacks: ""
+    # 单价表：单位是「微元 / 百万 token」，即 元/百万token × 1_000_000。
+    # ！！！下面两个是 DeepSeek 公开挂牌价的换算示例，不是账单实测值 ！！！
+    # 请在收尾前按自己的实际计费口径核对并改写；单价会作为快照写进每条用量记录。
+    pricing:
+      models:
+        deepseek-chat:
+          prompt-per-million: ${PRICE_DEEPSEEK_CHAT_PROMPT:2000000}
+          completion-per-million: ${PRICE_DEEPSEEK_CHAT_COMPLETION:8000000}
+        deepseek-reasoner:
+          prompt-per-million: ${PRICE_DEEPSEEK_REASONER_PROMPT:4000000}
+          completion-per-million: ${PRICE_DEEPSEEK_REASONER_COMPLETION:16000000}
 
 logging:
   level:

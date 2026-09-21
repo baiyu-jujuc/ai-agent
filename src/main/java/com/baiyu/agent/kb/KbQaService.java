@@ -1,13 +1,13 @@
 package com.baiyu.agent.kb;
 
-import com.baiyu.agent.config.ChatModelFactory;
+import com.baiyu.agent.gateway.CallScene;
+import com.baiyu.agent.gateway.GatewayRequest;
+import com.baiyu.agent.gateway.ModelGateway;
+import com.baiyu.agent.gateway.PromptTemplateService;
 import com.baiyu.agent.kb.entity.*;
 import com.baiyu.agent.kb.repository.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,25 +25,22 @@ public class KbQaService {
     private final CitationRepository citationRepo;
     private final FeedbackRepository feedbackRepo;
     private final KbMessageRepository messageRepo;
-    private final ChatClient chatClient;
-    private final ChatModelFactory chatModelFactory;
-    private final boolean allowClientModelKey;
+    private final ModelGateway modelGateway;
+    private final PromptTemplateService promptTemplateService;
 
     public KbQaService(
             KnowledgeBaseService kbService,
             CitationRepository citationRepo,
             FeedbackRepository feedbackRepo,
             KbMessageRepository messageRepo,
-            ChatClient chatClient,
-            ChatModelFactory chatModelFactory,
-            @Value("${agent.security.allow-client-model-key:false}") boolean allowClientModelKey) {
+            ModelGateway modelGateway,
+            PromptTemplateService promptTemplateService) {
         this.kbService = kbService;
         this.citationRepo = citationRepo;
         this.feedbackRepo = feedbackRepo;
         this.messageRepo = messageRepo;
-        this.chatClient = chatClient;
-        this.chatModelFactory = chatModelFactory;
-        this.allowClientModelKey = allowClientModelKey;
+        this.modelGateway = modelGateway;
+        this.promptTemplateService = promptTemplateService;
     }
 
     @Transactional
@@ -67,14 +64,6 @@ public class KbQaService {
         }
         if (userId == null || userId.isBlank()) {
             throw new IllegalArgumentException("userId 不能为空");
-        }
-
-        // Determine which ChatClient to use
-        ChatClient activeClient = chatClient;
-        ChatModel perRequestModel = null;
-        if (allowClientModelKey && modelApiKey != null && !modelApiKey.isBlank()) {
-            perRequestModel = chatModelFactory.createChatModel(modelApiKey);
-            activeClient = ChatClient.builder(perRequestModel).build();
         }
 
         // Save user message before retrieval
@@ -111,14 +100,26 @@ public class KbQaService {
 
         String context = buildContext(chunks);
         String historyContext = buildHistoryContext(recentHistory);
-        String augmentedPrompt = buildPrompt(context, historyContext, question);
+        // Prompt 从模板服务取（数据库版本优先，库里没有就回退到内置模板）。
+        // 用完的 key + version 会写进用量记录，这样"效果变化是不是这次改 Prompt 引起的"才答得出来。
+        PromptTemplateService.RenderedPrompt prompt = promptTemplateService.render(
+                historyContext.isEmpty()
+                        ? PromptTemplateService.KEY_KB_QA_PLAIN
+                        : PromptTemplateService.KEY_KB_QA_WITH_HISTORY,
+                Map.of("context", context, "history", historyContext, "question", question));
+        String augmentedPrompt = prompt.text();
 
         String answer;
         try {
-            answer = activeClient.prompt()
-                    .user(augmentedPrompt)
-                    .call()
-                    .content();
+            // 模型调用收口到网关：这里不再关心用哪个模型、有没有 Key、要不要计量
+            answer = modelGateway.call(GatewayRequest.builder(CallScene.KB_QA)
+                    .userPrompt(augmentedPrompt)
+                    .spaceId(spaceId)
+                    .userId(userId)
+                    .conversationId(conversationId)
+                    .clientApiKey(modelApiKey)
+                    .promptTemplate(prompt.templateKey(), prompt.version())
+                    .build()).content();
         } catch (Exception e) {
             log.error("LLM call failed for space '{}'", spaceId);
             answer = "回答生成失败，请稍后重试。";
@@ -192,33 +193,6 @@ public class KbQaService {
         }
         sb.append("\n");
         return sb.toString();
-    }
-
-    private String buildPrompt(String context, String historyContext, String question) {
-        if (historyContext.isEmpty()) {
-            return """
-                    基于以下知识库内容回答问题。如果内容中没有相关信息，请明确说明"知识库中未找到相关内容"。
-
-                    知识库内容:
-                    %s
-
-                    问题: %s
-
-                    请给出准确、简洁的回答，并在末尾标注引用的来源编号 [1], [2] 等。
-                    """.formatted(context, question);
-        }
-        return """
-                基于以下知识库内容和对话历史回答问题。如果知识库内容中没有相关信息，请明确说明"知识库中未找到相关内容"。
-                结合对话历史理解用户的追问意图。
-
-                %s
-                知识库内容:
-                %s
-
-                问题: %s
-
-                请给出准确、简洁的回答，并在末尾标注引用的来源编号 [1], [2] 等。
-                """.formatted(historyContext, context, question);
     }
 
     private String buildNoContentAnswer(String question, List<KbMessage> history) {

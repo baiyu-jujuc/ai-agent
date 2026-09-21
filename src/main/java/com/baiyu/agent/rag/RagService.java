@@ -1,8 +1,10 @@
 package com.baiyu.agent.rag;
 
+import com.baiyu.agent.gateway.CallScene;
+import com.baiyu.agent.gateway.GatewayRequest;
+import com.baiyu.agent.gateway.ModelGateway;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.reader.TextReader;
 import org.springframework.ai.reader.markdown.MarkdownDocumentReader;
@@ -32,15 +34,15 @@ public class RagService {
     private static final int CHUNK_OVERLAP = 100;
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
 
-    private final ChatClient chatClient;
+    private final ModelGateway modelGateway;
     private final VectorStore vectorStore;
 
     @Value("${agent.storage.vector-store:memory}")
     private String vectorStoreType;
 
     @Autowired
-    public RagService(ChatClient chatClient, VectorStore vectorStore) {
-        this.chatClient = chatClient;
+    public RagService(ModelGateway modelGateway, VectorStore vectorStore) {
+        this.modelGateway = modelGateway;
         this.vectorStore = vectorStore;
     }
 
@@ -133,10 +135,9 @@ public class RagService {
                 .collect(Collectors.joining("\n\n---\n\n"));
 
         if (context.isEmpty()) {
-            return chatClient.prompt()
-                    .user(question)
-                    .call()
-                    .content();
+            return modelGateway.call(GatewayRequest.builder(CallScene.LEGACY_RAG)
+                    .userPrompt(question)
+                    .build()).content();
         }
 
         String augmentedPrompt = """
@@ -149,10 +150,9 @@ public class RagService {
                 
                 回答:""".formatted(context, question);
 
-        return chatClient.prompt()
-                .user(augmentedPrompt)
-                .call()
-                .content();
+        return modelGateway.call(GatewayRequest.builder(CallScene.LEGACY_RAG)
+                .userPrompt(augmentedPrompt)
+                .build()).content();
     }
 
     public String uploadAndIndex(MultipartFile file) throws IOException {

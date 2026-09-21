@@ -11,7 +11,7 @@ services:
       - VECTOR_STORE_TYPE=${VECTOR_STORE_TYPE:-memory}
       - AUTOCONFIG_EXCLUDE=${AUTOCONFIG_EXCLUDE:-org.springframework.ai.vectorstore.qdrant.autoconfigure.QdrantVectorStoreAutoConfiguration}
       - QDRANT_HOST=qdrant
-      - QDRANT_PORT=6333
+      - QDRANT_PORT=6334   # gRPC 端口（6333 是 REST）；Spring AI 的 QdrantVectorStore 走 gRPC
       - QDRANT_INIT_SCHEMA=${QDRANT_INIT_SCHEMA:-false}
       - EMBEDDING_API_KEY=${EMBEDDING_API_KEY:-}
       - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL:-https://api.openai.com}

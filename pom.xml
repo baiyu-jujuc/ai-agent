@@ -20,6 +20,13 @@
     <properties>
         <java.version>21</java.version>
         <spring-ai.version>1.0.0</spring-ai.version>
+        <!--
+          注意：Spring Boot 3.4.4 的 BOM 并<b>不</b>管理 resilience4j 的版本
+          （实测 mvn 报 "'dependencies.dependency.version' ... is missing"），
+          所以这两个依赖必须显式写版本；micrometer-registry-prometheus 仍由 Boot 管理。
+          2.2.0 是与 Spring Boot 3.4 搭配的稳定版本。
+        -->
+        <resilience4j.version>2.2.0</resilience4j.version>
     </properties>
 
     <dependencyManagement>
@@ -89,6 +96,24 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- L2 稳定性：限流 / 熔断 / 重试（版本由 Spring Boot 3.4.4 统一管理，不手写 version） -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-spring-boot3</artifactId>
+            <version>${resilience4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-micrometer</artifactId>
+            <version>${resilience4j.version}</version>
+        </dependency>
+
+        <!-- L4 可观测：/actuator/prometheus -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
 
         <!-- Spring Boot Validation -->

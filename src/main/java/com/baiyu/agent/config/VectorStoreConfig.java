@@ -11,6 +11,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -18,6 +20,11 @@ import java.util.concurrent.atomic.AtomicLong;
 
 @Configuration
 public class VectorStoreConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(VectorStoreConfig.class);
+
+    /** 语义缓存专用的向量库 Bean 名：它必须和知识库的 VectorStore 分开。 */
+    public static final String SEMANTIC_CACHE_VECTOR_STORE = "semanticCacheVectorStore";
 
     @Bean
     @Primary
@@ -27,6 +34,7 @@ public class VectorStoreConfig {
     }
 
     @Bean
+    @Primary
     @ConditionalOnProperty(name = "agent.storage.vector-store", havingValue = "qdrant")
     public VectorStore qdrantVectorStore(
             EmbeddingModel embeddingModel,
@@ -36,6 +44,33 @@ public class VectorStoreConfig {
         return QdrantVectorStore.builder(qdrantClient, embeddingModel)
                 .collectionName(collectionName)
                 .initializeSchema(initializeSchema)
+                .build();
+    }
+
+    /**
+     * 语义缓存专用的向量库：<b>独立 collection</b>。
+     *
+     * <p>为什么不能复用知识库那个：知识库里的 chunk 是"资料"，缓存里的是"答案"，
+     * 两者的生命周期、清理策略、检索语义完全不同。混在一起会导致
+     * 知识库检索结果里冒出"用户问题"这种奇怪的 chunk，把答案质量拖下去。
+     */
+    @Bean(SEMANTIC_CACHE_VECTOR_STORE)
+    @ConditionalOnProperty(name = "agent.storage.vector-store", havingValue = "qdrant")
+    public VectorStore semanticCacheVectorStore(
+            EmbeddingModel embeddingModel,
+            io.qdrant.client.QdrantClient qdrantClient,
+            com.baiyu.agent.gateway.GatewayProperties gatewayProperties,
+            @Value("${spring.ai.vectorstore.qdrant.collection-name:kb_chunks}") String kbCollection) {
+        String cacheCollection = gatewayProperties.getCache().getCollection();
+        if (cacheCollection.equals(kbCollection)) {
+            // 这不是"配置有点奇怪"，而是会污染知识库的严重问题：直接拒绝启动
+            throw new IllegalStateException("语义缓存 collection 不能和知识库 collection 相同（"
+                    + cacheCollection + "），请修改 agent.gateway.cache.collection");
+        }
+        log.info("语义缓存使用独立 collection：{}（知识库 collection：{}）", cacheCollection, kbCollection);
+        return QdrantVectorStore.builder(qdrantClient, embeddingModel)
+                .collectionName(cacheCollection)
+                .initializeSchema(true)
                 .build();
     }
 

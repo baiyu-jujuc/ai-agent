@@ -50,6 +50,13 @@
 | 页面模型 Key | `X-Model-API-Key` 支持普通对话和知识库问答，`ChatModelFactory` per-request 安全注入，默认关闭 | ✅ |
 | Qdrant 生产模式 | Spring AI 自动配置 `QdrantClient`，版本化向量索引同步，内存模式零依赖 | ✅ |
 | 对话上下文隔离 | `conversationId` 隔离到用户 + 空间 + 会话，`KbMessage` 持久化 | ✅ |
+| AI 网关 | `ModelGateway` 收口全部模型调用（改造前散落在 6 个类 9 处），业务类不再直接持有 `ChatClient` | ✅ |
+| Token 计量与成本 | 每次调用落一条 `llm_usage_record`：模型 / prompt 与 completion tokens / 来源（真实或估算）/ 延迟 / 场景 / **单价快照** / 整数微元成本，支持按天与空间聚合 | ✅ |
+| 稳定性控制 | Resilience4j **按模型**限流 + 熔断 + 重试 + 网关层超时（默认 30s，短于 HTTP 层 60s），主模型失败自动降级到备用模型，全部失败返回可读兜底话术 | ✅ |
+| 语义缓存 | 独立 `semantic_cache` collection + 空间与 Prompt 版本隔离 + 拒答不缓存（需 `VECTOR_STORE_TYPE=qdrant` 并有 Embedding） | ✅ |
+| Prompt 版本管理 | Prompt 模板入库（key + version + active），支持切换与回滚，调用记录带 `prompt_key` / `prompt_version` | ✅ |
+| 离线评测 | `eval/eval_set.jsonl`（77 条，含拒答题、跨文档多跳、同名文档多版本与语义近似对照）；跑批产出 Hit@5、引用准确率、拒答正确率、答案相关性、P95 延迟、平均单次成本 | ✅ |
+| 可观测指标 | Micrometer 自定义指标（调用数 / token / 成本 / 降级 / 延迟）+ `/actuator/prometheus`，tag 只用低基数维度 | ✅ |
 
 ---
 
@@ -157,6 +164,10 @@ Compose 会启动四类服务：
 
 默认使用 MySQL 持久化元数据、Redis 保存会话记忆；向量检索使用内存模式，确保没有 Embedding Key 时仍能一键启动。需要 Qdrant 时按 5.5 切换。
 
+> **如果容器没有外网出口**（受限网络下常见）：`docker compose up -d --build` 会在构建阶段卡在 Maven 下载。
+> 这时可以先在 Windows 侧 `mvn -B verify`，再在 WSL 里执行 `bash scripts/run-docker-from-jar.sh`，
+> 把已构建好的 jar 打成运行时镜像并启动 app 服务（同样能验证容器化运行）。
+
 首次启动后可准备可重复演示数据并执行端到端验收：
 
 ```powershell
@@ -207,7 +218,7 @@ export EMBEDDING_API_KEY=your-embedding-key
 export EMBEDDING_BASE_URL=https://api.openai.com
 export EMBEDDING_MODEL=text-embedding-3-small
 export QDRANT_HOST=localhost
-export QDRANT_PORT=6333
+export QDRANT_PORT=6334   # gRPC 端口；6333 是 REST
 export QDRANT_INIT_SCHEMA=true
 ./mvnw spring-boot:run
 ```
@@ -246,6 +257,52 @@ npm run dev
 ```
 
 工程通过 `.nvmrc` 固定 Node `22.16.0`，并使用项目级 `.npmrc`，不会修改全局 Node 或全局 npm 配置。
+
+### 5.8 AI 网关：四层开关与评测跑批
+
+模型调用全部收口到 `com.baiyu.agent.gateway.ModelGateway`。计量、稳定性、缓存、指标都挂在这一层，**每一层都有独立开关**，出问题时按开关逐个排除，不要一次全开再 debug：
+
+| 开关 | 默认 | 关闭后的行为 |
+| --- | --- | --- |
+| `GATEWAY_ENABLED` | `true` | 网关内部直接调用模型，不做计量 / 缓存 / 限流（最终兜底） |
+| `GATEWAY_METERING_ENABLED` | `true` | 不写 `llm_usage_record`，主链路行为不变 |
+| `GATEWAY_RESILIENCE_ENABLED` | `false` | 不做限流 / 熔断 / 重试，直接调用 |
+| `GATEWAY_CACHE_ENABLED` | `true` | 不走语义缓存，每次都真实调用 |
+| `GATEWAY_PROMPT_STORE_ENABLED` | `true` | Prompt 回退到代码内置模板 |
+| `GATEWAY_METRICS_ENABLED` | `true` | 不上报 Micrometer 指标 |
+
+启动日志会逐项打印开关状态；如果缓存配置开着但当前模式不支持（内存模式没有 `EmbeddingModel`），日志会**明确写出原因**，而不是让你去猜"缓存为什么不生效"。
+
+语义缓存的前置条件：`VECTOR_STORE_TYPE=qdrant` 且配好 `EMBEDDING_API_KEY`（DeepSeek 不提供 embedding，需要另配 OpenAI 兼容的 embedding 服务）。缓存使用独立 collection（默认 `semantic_cache`），与知识库的 `kb_chunks` 完全分开；若把两者配成同名，应用会在启动时直接拒绝启动。
+
+> **Qdrant 端口别配错**：REST 是 `6333`、gRPC 是 `6334`，而 Spring AI 的 `QdrantVectorStore` 走 gRPC，
+> 所以 `QDRANT_PORT` 要填 **6334**（填 6333 会报 `UNAVAILABLE: io exception`）。
+
+缓存的运行时行为已经在真实 Qdrant 上验证过（命中 / 跨空间隔离 / 跨模型隔离 / TTL 过期 / 清空缓存，
+见 `docs/ai-gateway-verification.md` 第 3.2 节，一键复现：`bash scripts/run-cache-it.sh`）。
+**但相似度阈值 0.92 仍是初始值**——"语义相近但措辞不同"的分数必须用真实 embedding 才能校准。
+
+用量与配置的管理接口**需要 `X-API-Key` + JWT + ADMIN 角色**（普通用户会收到 403）：
+
+```powershell
+curl.exe -s "http://localhost:8080/api/admin/usage?from=2026-09-01&to=2026-09-30" -H "X-API-Key: <key>" -H "Authorization: Bearer <token>"
+curl.exe -s "http://localhost:8080/api/admin/models"  -H "X-API-Key: <key>" -H "Authorization: Bearer <token>"
+curl.exe -s "http://localhost:8080/api/admin/prompts" -H "X-API-Key: <key>" -H "Authorization: Bearer <token>"
+curl.exe -s "http://localhost:8080/actuator/prometheus" -H "Authorization: Bearer <token>" | findstr llm_
+```
+
+怎么拿到 ADMIN 角色：在 `ADMIN_USERNAMES`（逗号分隔）里列出用户名，或配置 `BOOTSTRAP_ADMIN_USERNAME` / `BOOTSTRAP_ADMIN_PASSWORD` 让启动时创建引导管理员（**已存在的同名用户不会被自动提权**）。
+
+Actuator 的暴露面：只有 `/actuator/health` 公开（Docker healthcheck 依赖它），`metrics` / `prometheus` 需要登录——这些端点能读出内存、线程、调用量与错误分布，属于运行数据。
+
+离线评测跑批（会真实消耗 token，建议先小样本）：
+
+```powershell
+.\scripts\run-eval-local.ps1 -Tag post-upgrade -Limit 10   # 先跑 10 条验证链路
+.\scripts\run-eval-local.ps1 -Tag post-upgrade             # 全量 77 条
+```
+
+报告输出到 `eval/reports/eval-report-<tag>.json` 与同名 `.md`；评测集与指标定义见 `eval/README.md`。
 
 ---
 
@@ -358,13 +415,26 @@ curl -X POST http://localhost:8080/api/chat/simple \
 | `EMBEDDING_API_KEY` | 空 | 生产向量模式所需 Embedding Key |
 | `EMBEDDING_BASE_URL` | `https://api.openai.com` | Embedding 服务地址 |
 | `EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding 模型 |
-| `QDRANT_HOST` / `QDRANT_PORT` | `localhost` / `6333` | Qdrant 地址 |
+| `QDRANT_HOST` / `QDRANT_PORT` | `localhost` / `6334` | Qdrant 地址；端口必须是 **gRPC 6334**（6333 是 REST，配错会连不上） |
 | `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | Redis 地址 |
 | `RATE_LIMIT` | `30` | 每 IP 每分钟请求上限 |
 | `ALLOWED_ORIGINS` | 本机地址 | CORS 白名单 |
 | `ALLOW_CLIENT_MODEL_KEY` | `false` | 是否允许前端传入模型 API Key |
 | `LEGACY_RAG_ENABLED` | `false` | 是否启用旧 `/api/rag/**` 接口（默认关闭） |
 | `AUTOCONFIG_EXCLUDE` | Qdrant 自动配置类 | 内存模式下排除的自动配置类 |
+| `GATEWAY_ENABLED` | `true` | AI 网关总开关 |
+| `GATEWAY_METERING_ENABLED` | `true` | 是否写用量记录（L1） |
+| `GATEWAY_RESILIENCE_ENABLED` | `false` | 是否启用限流 / 熔断 / 重试（L2） |
+| `GATEWAY_CACHE_ENABLED` | `true` | 是否启用语义缓存（L3，需 qdrant 模式） |
+| `GATEWAY_PROMPT_STORE_ENABLED` | `true` | Prompt 模板是否走数据库版本管理（L3） |
+| `GATEWAY_METRICS_ENABLED` | `true` | 是否上报 Micrometer 指标（L4） |
+| `GATEWAY_TIMEOUT_SECONDS` | `30` | 网关层超时，必须小于 HTTP 层的 60s |
+| `GATEWAY_RATE_LIMIT_PER_MODEL_PER_SECOND` | `5` | 每个模型每秒放行请求数 |
+| `GATEWAY_RETRY_MAX_ATTEMPTS` | `2` | 失败重试的最大尝试次数（含首次） |
+| `GATEWAY_CACHE_THRESHOLD` | `0.92` | 语义缓存相似度阈值 |
+| `GATEWAY_CACHE_TTL_HOURS` | `24` | 语义缓存 TTL |
+| `PRICE_DEEPSEEK_CHAT_PROMPT` 等 | 见 `application.yml` | 单价（微元 / 百万 token），**必须按实际账单核对** |
+| `MANAGEMENT_EXPOSURE` | `health,info,metrics,prometheus` | Actuator 暴露的端点 |
 
 完整配置见 `.env.example`。
 
@@ -376,7 +446,7 @@ curl -X POST http://localhost:8080/api/chat/simple \
 ./mvnw clean verify --no-transfer-progress
 ```
 
-当前仓库包含 133 个自动化测试，覆盖：
+当前仓库共 240 个自动化测试（其中 10 个依赖外部服务的集成用例默认跳过），覆盖：
 
 - ChatController 参数与状态码
 - KB 服务、KbQaService 问答、消息持久化与多轮上下文
@@ -387,6 +457,11 @@ curl -X POST http://localhost:8080/api/chat/simple \
 - Qdrant Bean 装配（内存模式不创建 QdrantClient）
 - 旧 RAG 接口默认禁用（`legacy.rag.enabled=false`）
 - 旧 RAG、Agent 和工具兼容性测试
+- AI 网关：计量字段完整性、成本整数计算、流式取末片 usage、降级链、熔断打开与短路、按模型限流、
+  网关层超时、流式"已输出不重试"、客户端自带 Key 开关行为
+- Prompt 版本管理（新增版本 / 切换生效 / 回滚 / 数据库不可用时回退内置模板）
+- 语义缓存（命中判定、空间与模型隔离、TTL 过期、拒答不缓存、缓存 collection 与知识库隔离）
+- 评测指标口径（P95 取位、打分解析、拒答题与可答题分母分离）
 
 > 测试默认不依赖真实 API Key，不会访问外网 LLM。
 
@@ -395,7 +470,9 @@ curl -X POST http://localhost:8080/api/chat/simple \
 ## 9. 安全与隐私设计
 
 - 平台 API Key 只通过请求头 `X-API-Key` 传递，常量时间比较，避免 URL 记录。
-- 按 IP 限流、CORS 白名单、Actuator 最小暴露。
+- 按 IP 限流、CORS 白名单、Actuator 收敛暴露。
+- **管理接口越权修复**：开启方法级安全（`@EnableMethodSecurity`），`/api/admin/**`（用量、模型路由、Prompt、评测）统一要求 **ADMIN 角色**；普通用户即使是合法登录也只能拿到 403，不再"登录即可读成本、改路由与 Prompt"。
+- **Actuator 越权修复**：`/actuator/**` 从"全部放行"收敛为"只放行 `/actuator/health`"，`metrics` / `prometheus` 必须带 JWT；实测不带 token 访问 `prometheus` 返回 403。
 - `.env` 不入库，真实 Key 不出现在页面、日志和错误响应。
 - 生产环境必须替换默认 `AGENT_API_KEY`，并根据部署模式配置 DB / Redis / Qdrant / Embedding。
 - 异常处理统一返回通用错误信息，不泄露堆栈细节。
@@ -411,13 +488,19 @@ curl -X POST http://localhost:8080/api/chat/simple \
 - ✅ 浅色 DeepSeek 风格中文 Web UI
 - ✅ 模型注册与知识库问答主链路
 - ✅ GitHub Actions CI、Dockerfile、Compose、Maven Wrapper
-- ✅ 133 个自动化测试（不依赖外网 LLM）
 - ✅ 文档分块（中文单字分词 + 英文 token）、PDF/Markdown 读取
 - ✅ 文档版本管理与回滚（含向量索引同步）
 - ✅ 统一异常处理、Actuator 最小暴露
 - ✅ JWT + Spring Security 用户鉴权（注册/登录/BCrypt）
 - ✅ Spring Security 路由级授权（`/api/kb/**`、`/api/chat/**` 等要求已认证）
 - ✅ 权限强制执行（canRead/canWrite/canAdmin 接入所有 KB API，资源归属校验）
+- ✅ AI 网关（`ModelGateway` 收口 9 处模型调用）+ Token 计量与整数微元成本 + 单价快照
+- ✅ Resilience4j 按模型限流 / 熔断 / 重试 / 网关层超时 + 备用模型降级 + 可读兜底话术
+- ✅ 语义缓存（独立 collection + 空间隔离 + 拒答不缓存）与 Prompt 模板版本管理
+- ✅ 离线评测跑批（77 条评测集 → Hit@5 / 引用准确率 / 拒答正确率 / 相关性 / P95 / 平均成本）
+- ✅ Prometheus 指标端点与自定义低基数指标（调用数 / token / 成本 / 降级 / 延迟）
+- ✅ 共 240 个自动化测试，其中 10 个依赖外部服务的集成用例默认跳过（3 个用量探针 + 7 个 Qdrant 集成用例），失败 0；默认不访问外网 LLM
+- ✅ 管理接口与 Actuator 的越权修复（`/api/admin/**` 需 ADMIN 角色；`/actuator/**` 只放行 health）
 - ✅ 页面文档上传 UI（拖拽/选择上传、解析状态、版本列表、回滚）
 - ✅ 知识空间问答主链路打通（选空间 → /api/kb/spaces/{id}/ask）
 - ✅ 引用与反馈 UI（编号引用、点击展开原文、置信度 badge、点赞点踩和补充反馈）

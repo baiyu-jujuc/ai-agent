@@ -1,7 +1,7 @@
 package com.baiyu.agent.agent;
 
+import com.baiyu.agent.gateway.ModelGateway;
 import com.baiyu.agent.tool.ToolComponent;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -9,8 +9,8 @@ import java.util.List;
 @Component("react")
 public class ReActAgent extends AbstractAgent {
 
-    public ReActAgent(ChatClient chatClient, List<ToolComponent> allTools) {
-        super(chatClient, """
+    public ReActAgent(ModelGateway modelGateway, List<ToolComponent> allTools) {
+        super(modelGateway, """
                 你是一个 ReAct (推理+行动) Agent。
                 先逐步推理再行动，需要时使用可用工具。
                 框架自动处理工具调用循环：决定调用哪个工具、审查观察结果、

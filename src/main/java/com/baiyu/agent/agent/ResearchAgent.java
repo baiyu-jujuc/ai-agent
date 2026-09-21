@@ -1,7 +1,7 @@
 package com.baiyu.agent.agent;
 
+import com.baiyu.agent.gateway.ModelGateway;
 import com.baiyu.agent.tool.ToolComponent;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Component;
 
@@ -12,8 +12,8 @@ import java.util.stream.Collectors;
 @Component("research")
 public class ResearchAgent extends AbstractAgent {
 
-    public ResearchAgent(ChatClient chatClient, List<ToolComponent> allTools) {
-        super(chatClient, """
+    public ResearchAgent(ModelGateway modelGateway, List<ToolComponent> allTools) {
+        super(modelGateway, """
                 你是一个研究 Agent。你的能力：
                 - 用准确、最新的信息回答问题
                 - 综合多个来源的信息

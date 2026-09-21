@@ -1,0 +1,24 @@
+[PROBE] 已读取 .env，键数量=33
+[PROBE] baseUrl=https://api.deepseek.com model=deepseek-chat apiKey=已加载(长度35)
+[PROBE] OpenAiChatOptions.builder().build().getStreamUsage() = false
+[PROBE] ===== 流式（默认 options） =====
+[PROBE] chunk 总数=3，带 usage 的 chunk=3，usage.totalTokens>0 的 chunk=1
+[PROBE]   chunk[0] text="" usage=prompt=0,completion=0,total=0
+[PROBE]   chunk[1] text="收到" usage=prompt=0,completion=0,total=0
+[PROBE]   chunk[2] text="" usage=prompt=10,completion=1,total=11
+[PROBE] 最后一片文本=
+[PROBE] usage: promptTokens=10, completionTokens=1, totalTokens=11
+[PROBE] nativeUsage=Usage[completionTokens=1, promptTokens=10, totalTokens=11, promptTokensDetails=PromptTokensDetails[audioTokens=null, cachedTokens=0], completionTokenDetails=null]
+[PROBE] ===== 流式（streamUsage=true） =====
+[PROBE] chunk 总数=3，带 usage 的 chunk=3，usage.totalTokens>0 的 chunk=2
+[PROBE]   chunk[0] text="" usage=prompt=0,completion=0,total=0
+[PROBE]   chunk[1] text="收到" usage=prompt=10,completion=1,total=11
+[PROBE]   chunk[2] text="" usage=prompt=10,completion=1,total=11
+[PROBE] 最后一片文本=
+[PROBE] usage: promptTokens=10, completionTokens=1, totalTokens=11
+[PROBE] nativeUsage=Usage[completionTokens=1, promptTokens=10, totalTokens=11, promptTokensDetails=PromptTokensDetails[audioTokens=null, cachedTokens=0], completionTokenDetails=null]
+[PROBE] ===== 非流式 =====
+[PROBE] answer=收到
+[PROBE] model=deepseek-flash
+[PROBE] usage: promptTokens=10, completionTokens=1, totalTokens=11
+[PROBE] nativeUsage=Usage[completionTokens=1, promptTokens=10, totalTokens=11, promptTokensDetails=PromptTokensDetails[audioTokens=null, cachedTokens=0], completionTokenDetails=null]
