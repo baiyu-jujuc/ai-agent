@@ -50,6 +50,13 @@ $today = (Get-Date).ToString("yyyy-MM-dd")
   Select-Object -First 5 scene,modelId,routeType,promptTokens,completionTokens,usageSource,costMicros,latencyMs,outcome |
   Format-Table -AutoSize
 
+# A2 算账数据只给管理员：普通用户 reader 登录后读同一个接口 → 403
+$ReaderToken = (Invoke-RestMethod -Method Post "$Base/api/auth/login" -ContentType "application/json" `
+                -Body '{"username":"reader","password":"123456"}').token
+curl.exe -s -o NUL -w "reader -> HTTP %{http_code}`n" "$Base/api/admin/usage" `
+  -H "X-API-Key: $ApiKey" -H "Authorization: Bearer $ReaderToken"
+# 预期输出：reader -> HTTP 403
+
 # B 熔断+降级（自动起一个上游不可用的实例，跑完自动停）
 .\scripts\verify-gateway.ps1 -Requests 6 -Port 8090
 
@@ -75,16 +82,17 @@ curl.exe -s "http://localhost:8090/actuator/prometheus" -H "Authorization: Beare
 - **口播**：这次给企业知识库平台做了一次 AI 工程化升级：把散落的模型调用收口到一个网关，然后在这层上加计量、稳定性、缓存和评测。我用四个能复现的证据讲，不吹效果。
 - **要点**：一句话说清"在哪儿加、加了什么"，不解释技术细节
 
-### 镜头 2　计量：问一次，落一条账（0:12–0:42）
+### 镜头 2　计量：问一次，落一条账（0:12–0:45）
 
 - **画面/操作**：
 1. 在输入框问：`生产数据库的全量备份在几点执行、保留多少天？` → 回车，等回答出来（带 `[1]` 引用）
 2. 切到终端，粘 **命令 A** → 出现一条记录
+3. 紧接着粘 **命令 A2**（普通用户 reader 读同一个接口）→ 输出 `reader -> HTTP 403`
 - **画面对照**：记录里的 `scene=KB_QA`、`modelId=deepseek-chat`、`usageSource=PROVIDER`、`promptTokens/completionTokens`、`costMicros`、`latencyMs`
-- **口播**：每次模型调用都会落一条用量记录：模型、prompt 和 completion token、延迟、场景，还有当时的单价快照和整数微元成本。token 用的是供应商返回的真实值——流式请求我也实测过，usage 只出现在最后一片 chunk 上，所以要取末片覆盖写，逐片累加会得到 0。成本用整数微元存，避免浮点累加对不上账。计量是独立事务，写失败只记日志，不影响用户拿答案。
-- **剪切提示**：提问后等待的那 2–3 秒可加速 2 倍
+- **口播**：每次模型调用都会落一条用量记录：模型、prompt 和 completion token、延迟、场景，还有当时的单价快照和整数微元成本。token 用的是供应商返回的真实值——流式请求我也实测过，usage 只出现在最后一片 chunk 上，所以要取末片覆盖写，逐片累加会得到 0。计量是独立事务，写失败只记日志，不影响用户拿答案。这些账只给管理员看：普通用户就算登录了，读同一个接口也是 403，成本数据不会漏到前台。
+- **剪切提示**：提问后等待的那 2–3 秒可加速 2 倍；命令 A2 只占 3–5 秒
 
-### 镜头 3　熔断 + 降级：一条命令看到证据（0:42–1:05）
+### 镜头 3　熔断 + 降级：一条命令看到证据（0:45–1:07）
 
 - **画面/操作**：粘 **命令 B**（`.\scripts\verify-gateway.ps1 -Requests 6 -Port 8090`），等它跑完（约 30 秒），停在输出上
 - **必须出现的行**：
@@ -115,7 +123,7 @@ curl.exe -s "http://localhost:8090/actuator/prometheus" -H "Authorization: Beare
 
 > 这次给企业知识库平台做了一次 AI 工程化升级：把散落在六七个类里的模型调用收口到一个网关，然后在这层上加计量、稳定性、缓存和评测。我用四个能复现的证据讲。
 >
-> 第一，计量。每次模型调用都会落一条用量记录：模型、prompt 和 completion token、延迟、场景，还有当时的单价快照和整数微元成本。token 用供应商返回的真实值——流式请求我实测过，usage 只出现在最后一片 chunk 上，所以要取末片覆盖写，逐片累加会得到零。计量是独立事务，写失败只打日志，不影响用户拿到答案。
+> 第一，计量。每次模型调用都会落一条用量记录：模型、prompt 和 completion token、延迟、场景，还有当时的单价快照和整数微元成本。token 用供应商返回的真实值——流式请求我实测过，usage 只出现在最后一片 chunk 上，所以要取末片覆盖写，逐片累加会得到零。计量是独立事务，写失败只打日志，不影响用户拿到答案。这些账只有管理员能看：普通用户登录后读同一个接口也是四百零三。
 >
 > 第二，稳定性。我按模型维度做了限流、熔断、重试，还有一层比 HTTP 更短的网关超时。验证方式是把上游指向一个不存在的端口：熔断打开后失败率百分之百，后面的请求直接被短路，六次调用全部在几百毫秒内返回可读的降级话术，而不是五百错误。这是模拟故障，不是线上演练。顺便说一句，我发现管理接口和 Actuator 存在越权，这次一起修了：不带 token 读指标会返回四百零三。
 >
@@ -130,6 +138,7 @@ curl.exe -s "http://localhost:8090/actuator/prometheus" -H "Authorization: Beare
 1. **熔断那段必须说"模拟"**：是"把上游指向不存在的端口验证熔断与降级"，不是"线上故障演练"。
 2. **缓存不要说"实测命中率高"**：真实 Qdrant 上验证的是命中、空间隔离、TTL、清空；`0.92` 这个阈值**没有**用真实 embedding 校准过，被问到要直说。
 3. **评测不要说"建立了评估体系"**：就说"77 条用例、算了这六个指标、基线还没采"。数字都在 `eval/reports/eval-report-post-upgrade-v2.md` 里，随口编会被追着问。
+4. **算账数据只对管理员开放**：别说"谁都能查用量"，要说"管理接口需要 ADMIN 角色，普通用户 403；指标端点也是 ADMIN 专属"。前台页面里不出现任何 token / 成本字段，这一点也是设计选择。
 
 ---
 
