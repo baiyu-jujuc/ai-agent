@@ -238,7 +238,7 @@ tag 只用 `model` / `scene` / `outcome` 这类有限枚举，**没有 userId / 
 修复内容：
 
 - `@EnableMethodSecurity` + 四个管理 Controller 上的 `@PreAuthorize("hasRole('ADMIN')")`；
-- `/actuator/**` 从 permitAll 收敛为**只放行 `/actuator/health`**，`metrics` / `prometheus` 需认证；
+- `/actuator/**` 从 permitAll 收敛为**只放行 `/actuator/health`**；`metrics` / `prometheus` 含 token、成本、调用量与错误分布，属于算账数据，因此要求 **ADMIN 角色**（2026-09-27 追加收紧：此前只要求"已登录"）；
 - `GlobalExceptionHandler` 新增 `AccessDeniedException` → **403**（原先被兜底 handler 吞成 500）；
 - ADMIN 角色来源：`ADMIN_USERNAMES` 名单 / `BOOTSTRAP_ADMIN_*` 引导管理员，且**不自动给已有用户提权**。
 
@@ -252,7 +252,8 @@ tag 只用 `model` / `scene` / `outcome` 这类有限枚举，**没有 userId / 
 ```
 
 单元/集成测试 10 条（`AdminAccessSecurityTest`）：管理接口无 JWT → 403、普通用户 → 403、ADMIN → 200；
-`/actuator/health` → 200、`metrics`/`prometheus` 无 token → 403、带 JWT → 200。
+`/actuator/health` → 200；`metrics` 无 token → 403、普通用户 JWT → **403**、ADMIN JWT → 200（`AdminAccessSecurityTest#actuatorMetricsIsAdminOnly`）。
+端到端复测：`scripts/verify-gateway.ps1` 里"不带 token 读 prometheus"仍返回 403，带 ADMIN token 可读到 `llm_*` 指标。
 
 ### 4.4 容器化运行验证（2026-09-17）
 

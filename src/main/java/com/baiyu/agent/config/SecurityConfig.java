@@ -78,10 +78,11 @@ public class SecurityConfig implements WebMvcConfigurer {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
-                        // Actuator 收敛：只有健康检查公开（Docker healthcheck 依赖它），
-                        // metrics / prometheus 属于运行数据，必须登录才能读
+                        // Actuator 收敛：只有健康检查公开（Docker healthcheck 依赖它）。
+                        // metrics / prometheus 里有 token、成本、调用量与错误分布，属于"算账数据"，
+                        // 因此不只是"要登录"，而是要求 ADMIN 角色——普通用户登录也读不到。
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
-                        .requestMatchers("/actuator/**").authenticated()
+                        .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/chat/models", "/api/chat/tools", "/api/chat/strategies", "/api/chat/storage-status", "/api/agent/**").permitAll()
                         .requestMatchers("/api/kb/**").authenticated()
                         .requestMatchers("/api/chat/**").authenticated()

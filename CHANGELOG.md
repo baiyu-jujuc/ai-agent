@@ -26,7 +26,7 @@ AI 平台升级：统一网关 + 计量 + 稳定性 + 缓存与 Prompt 治理 + 
 ### Security
 
 - **修复管理接口越权**：开启方法级安全（`@EnableMethodSecurity`），`/api/admin/**` 由"登录即可访问"改为**要求 ADMIN 角色**（`@PreAuthorize("hasRole('ADMIN')")`）；普通用户的 JWT 访问会得到 403，而不是读到全站成本数据、改模型路由和 Prompt
-- **修复 Actuator 越权**：`/actuator/**` 由"全部 permitAll"收敛为**只放行 `/actuator/health`**，`metrics` 与 `prometheus` 改为需要认证（可读内存、线程、调用量与错误分布，属于运行数据）
+- **修复 Actuator 越权**：`/actuator/**` 由"全部 permitAll"收敛为**只放行 `/actuator/health`**；`metrics` 与 `prometheus` 里有 token 总量、成本、调用量与错误分布，属于算账数据，因此要求 **ADMIN 角色**——普通用户即使登录也读不到（实测：不带 token → 403，普通用户 JWT → 403，仅 ADMIN 可读）
 - 新增 ADMIN 角色的两种来源：`ADMIN_USERNAMES` 名单（注册即为 admin，默认空）与 `BOOTSTRAP_ADMIN_*` 引导管理员（幂等，且**不会给已存在的同名用户自动提权**）
 - `GlobalExceptionHandler` 新增 `AccessDeniedException` 处理：越权返回 **403**，不再被兜底 handler 吞成 500（否则"没权限"会被误报成"服务器故障"）
 - **修复语义缓存写入真实 Qdrant 时的 3 个缺陷**（单测用 mock 向量库发现不了，靠直连 Qdrant 的集成测试暴露）：

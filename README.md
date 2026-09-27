@@ -293,7 +293,7 @@ curl.exe -s "http://localhost:8080/actuator/prometheus" -H "Authorization: Beare
 
 怎么拿到 ADMIN 角色：在 `ADMIN_USERNAMES`（逗号分隔）里列出用户名，或配置 `BOOTSTRAP_ADMIN_USERNAME` / `BOOTSTRAP_ADMIN_PASSWORD` 让启动时创建引导管理员（**已存在的同名用户不会被自动提权**）。
 
-Actuator 的暴露面：只有 `/actuator/health` 公开（Docker healthcheck 依赖它），`metrics` / `prometheus` 需要登录——这些端点能读出内存、线程、调用量与错误分布，属于运行数据。
+Actuator 的暴露面：只有 `/actuator/health` 公开（Docker healthcheck 依赖它）；`metrics` / `prometheus` **需要 ADMIN 角色**——它们能读出 token 总量、成本、调用量与错误分布，属于算账数据，普通用户即使登录也读不到。
 
 离线评测跑批（会真实消耗 token，建议先小样本）：
 
@@ -472,7 +472,7 @@ curl -X POST http://localhost:8080/api/chat/simple \
 - 平台 API Key 只通过请求头 `X-API-Key` 传递，常量时间比较，避免 URL 记录。
 - 按 IP 限流、CORS 白名单、Actuator 收敛暴露。
 - **管理接口越权修复**：开启方法级安全（`@EnableMethodSecurity`），`/api/admin/**`（用量、模型路由、Prompt、评测）统一要求 **ADMIN 角色**；普通用户即使是合法登录也只能拿到 403，不再"登录即可读成本、改路由与 Prompt"。
-- **Actuator 越权修复**：`/actuator/**` 从"全部放行"收敛为"只放行 `/actuator/health`"，`metrics` / `prometheus` 必须带 JWT；实测不带 token 访问 `prometheus` 返回 403。
+- **Actuator 越权修复**：`/actuator/**` 从"全部放行"收敛为"只放行 `/actuator/health`"；`metrics` / `prometheus` 要求 **ADMIN 角色**（不是"登录即可"，因为它们会暴露成本与用量）。实测：不带 token → 403，普通用户 JWT → 403，仅 ADMIN 可读。
 - `.env` 不入库，真实 Key 不出现在页面、日志和错误响应。
 - 生产环境必须替换默认 `AGENT_API_KEY`，并根据部署模式配置 DB / Redis / Qdrant / Embedding。
 - 异常处理统一返回通用错误信息，不泄露堆栈细节。
@@ -500,7 +500,7 @@ curl -X POST http://localhost:8080/api/chat/simple \
 - ✅ 离线评测跑批（77 条评测集 → Hit@5 / 引用准确率 / 拒答正确率 / 相关性 / P95 / 平均成本）
 - ✅ Prometheus 指标端点与自定义低基数指标（调用数 / token / 成本 / 降级 / 延迟）
 - ✅ 共 240 个自动化测试，其中 10 个依赖外部服务的集成用例默认跳过（3 个用量探针 + 7 个 Qdrant 集成用例），失败 0；默认不访问外网 LLM
-- ✅ 管理接口与 Actuator 的越权修复（`/api/admin/**` 需 ADMIN 角色；`/actuator/**` 只放行 health）
+- ✅ 管理接口与 Actuator 的越权修复（`/api/admin/**` 与 `/actuator/metrics`、`/actuator/prometheus` 均需 ADMIN 角色；Actuator 只放行 health）
 - ✅ 页面文档上传 UI（拖拽/选择上传、解析状态、版本列表、回滚）
 - ✅ 知识空间问答主链路打通（选空间 → /api/kb/spaces/{id}/ask）
 - ✅ 引用与反馈 UI（编号引用、点击展开原文、置信度 badge、点赞点踩和补充反馈）

@@ -118,13 +118,15 @@ class AdminAccessSecurityTest {
     }
 
     @Test
-    void actuatorMetricsAllowsAuthenticatedUser() throws Exception {
-        // 说明：这里断言 /actuator/metrics 而不是 /actuator/prometheus——
-        // MockMvc 测试上下文里没有加载主 application.yml（测试资源里有一份同名文件），
-        // Prometheus registry 的端点映射不稳定；"带 JWT 能读到 prometheus" 这条在
-        // 真实进程里验证（scripts/verify-gateway.ps1 会带 JWT 去读）。
+    void actuatorMetricsIsAdminOnly() throws Exception {
+        // 指标端点是"算账数据"（token 总量、成本、调用量、错误分布），
+        // 所以普通用户即使登录也不能读，必须 ADMIN。
         mockMvc.perform(get("/actuator/metrics")
                         .header("Authorization", "Bearer " + tokenFor("user")))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/actuator/metrics")
+                        .header("Authorization", "Bearer " + tokenFor("admin")))
                 .andExpect(status().isOk());
     }
 }
