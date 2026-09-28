@@ -11,7 +11,7 @@ COPY src src
 RUN --mount=type=cache,target=/root/.m2/repository \
     mvn -B --no-transfer-progress -Dmaven.wagon.http.retryHandler.count=3 package -DskipTests
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:24-jre
 WORKDIR /app
 COPY --from=builder /app/target/*.jar app.jar
 EXPOSE 8080
