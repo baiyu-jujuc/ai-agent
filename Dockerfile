@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM maven:3.9-eclipse-temurin-21 AS builder
+FROM maven:3-eclipse-temurin-24 AS builder
 WORKDIR /app
 
 # 构建走阿里云 Maven 镜像：容器里从 Maven Central 拉 Spring AI 全家桶非常慢
