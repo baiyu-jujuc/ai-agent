@@ -129,7 +129,9 @@ agent:
     # 受保护路径（默认全部 API，含 chat/tools/rag）
     protected-paths: /api/**
     # 公开只读接口（仅 GET 生效）
-    public-paths: /api/chat/models,/api/chat/tools,/api/chat/storage-status,/api/agent/**
+    # 公开只读接口（仅 GET 生效）。注意：/api/agent/** 已从这里移除——
+    # Agent 执行入口（POST /api/agent/{name}）不能匿名调用，agent 的只读接口现在需要 JWT
+    public-paths: /api/chat/models,/api/chat/tools,/api/chat/storage-status
     # 单客户端每分钟请求上限，超出返回 429
     rate-limit-per-minute: ${RATE_LIMIT:30}
     # CORS 允许来源

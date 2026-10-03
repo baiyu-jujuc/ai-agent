@@ -27,21 +27,20 @@ class LegacyRagDisabledTest {
     private MockMvc mockMvc;
 
     @Test
-    void legacyRagSearchReturns404WhenDisabled() throws Exception {
-        // P3-6: /api/rag/** is disabled by default (legacy.rag.enabled=false)
-        // The RagController bean is not created, so the endpoint should not be found
+    void legacyRagSearchRequiresAuthWhenDisabled() throws Exception {
+        // /api/rag/** 默认关闭（legacy.rag.enabled=false）：未认证先被拦成 401
         mockMvc.perform(get("/api/rag/search")
                         .param("query", "test")
                         .header("X-API-Key", "dev-key-change-in-production"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
-    void legacyRagQueryReturns403WhenDisabled() throws Exception {
+    void legacyRagQueryRequiresAuthWhenDisabled() throws Exception {
         mockMvc.perform(post("/api/rag/query")
                         .contentType("application/json")
                         .header("X-API-Key", "dev-key-change-in-production")
                         .content("{\"question\":\"test\"}"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 }

@@ -48,7 +48,7 @@ public class SecurityConfig implements WebMvcConfigurer {
     @Value("${agent.security.protected-paths:/api/**}")
     private String protectedPaths;
 
-    @Value("${agent.security.public-paths:/api/chat/models,/api/chat/tools,/api/chat/storage-status,/api/agent/**,/api/auth/**}")
+    @Value("${agent.security.public-paths:/api/chat/models,/api/chat/tools,/api/chat/storage-status,/api/auth/**}")
     private String publicPaths;
 
     @Value("${agent.security.rate-limit-per-minute:30}")
@@ -76,14 +76,32 @@ public class SecurityConfig implements WebMvcConfigurer {
         http
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // 未认证 → 401、已认证但角色不足 → 403。
+                // 默认行为是两者都返回 403，而前端已经区分"401 去登录 / 403 无权限"，
+                // 且 ApiKeyInterceptor 对缺失 API Key 也是 401，口径保持一致。
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((request, response, authException) ->
+                                writeJsonError(response, HttpServletResponse.SC_UNAUTHORIZED,
+                                        "未认证: 请先登录获取 JWT", 401))
+                        .accessDeniedHandler((request, response, deniedException) ->
+                                writeJsonError(response, HttpServletResponse.SC_FORBIDDEN,
+                                        "无权限: 当前账号角色不足", 403)))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
+                        // 前端是单文件页面（static/index.html），只放行 UI 真正需要的静态路径。
+                        // 这是"默认拒绝"的代价，也是有意的：以后新增静态资源要显式加进来。
+                        .requestMatchers("/", "/index.html", "/favicon.ico", "/error").permitAll()
                         // Actuator 收敛：只有健康检查公开（Docker healthcheck 依赖它）。
                         // metrics / prometheus 里有 token、成本、调用量与错误分布，属于"算账数据"，
                         // 因此不只是"要登录"，而是要求 ADMIN 角色——普通用户登录也读不到。
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/actuator/**").hasRole("ADMIN")
-                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/chat/models", "/api/chat/tools", "/api/chat/strategies", "/api/chat/storage-status", "/api/agent/**").permitAll()
+                        // 只读的模型/工具清单可以匿名看；/api/agent/** 不再匿名放行——
+                        // 一旦这里留着 permitAll，后面新增 POST /api/agent/{name} 就等于对匿名开放（烧 Token、可触发内置工具）
+                        .requestMatchers(org.springframework.http.HttpMethod.GET,
+                                "/api/chat/models", "/api/chat/tools", "/api/chat/strategies", "/api/chat/storage-status")
+                        .permitAll()
+                        .requestMatchers("/api/agent/**").authenticated()
                         .requestMatchers("/api/kb/**").authenticated()
                         .requestMatchers("/api/chat/**").authenticated()
                         .requestMatchers("/api/rag/**").authenticated()
@@ -91,10 +109,19 @@ public class SecurityConfig implements WebMvcConfigurer {
                         // 管理接口（用量、路由、Prompt、评测）：必须带 JWT，
                         // 因为它们能看到成本数据、能改路由和 Prompt
                         .requestMatchers("/api/admin/**").authenticated()
-                        .anyRequest().permitAll()
+                        // 默认拒绝：新加的接口如果不显式放行，匿名会拿到 401、已登录普通用户会拿到 403。
+                        // 这条规则是为了避免"新写一个接口就默认裸奔"。
+                        .anyRequest().denyAll()
                 )
                 .addFilterBefore(new JwtAuthFilter(jwtUtil), UsernamePasswordAuthenticationFilter.class);
         return http.build();
+    }
+
+    private static void writeJsonError(HttpServletResponse response, int status, String message, int code)
+            throws java.io.IOException {
+        response.setStatus(status);
+        response.setContentType("application/json;charset=UTF-8");
+        response.getWriter().write("{\"error\":\"" + message + "\",\"code\":" + code + "}");
     }
 
     @Override

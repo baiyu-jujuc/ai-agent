@@ -36,39 +36,38 @@ class SecurityConfigTest {
     }
 
     @Test
-    void publicPostWithoutKeyBlocked() throws Exception {
-        // P3-3: Spring Security now enforces authentication at route level.
-        // Without JWT, /api/tools/** returns 403 (Spring Security blocks before ApiKeyInterceptor)
+    void postWithoutJwtReturns401() throws Exception {
+        // 未认证统一返回 401（不是 403）：前端按 401 跳登录、按 403 提示无权限
         mockMvc.perform(post("/api/tools/calculator")
                         .contentType("application/json")
                         .content("{\"input\":\"2+3\"}"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
-    void protectedPostWithCorrectKey() throws Exception {
-        // P3-3: Even with correct API Key, /api/tools/** requires JWT authentication.
-        // Without JWT, Spring Security blocks the request with 403.
+    void postWithApiKeyButNoJwtReturns401() throws Exception {
+        // 只有 API Key 不算认证：平台 Key 只用于识别客户端，JWT 才是"谁在调用"
         mockMvc.perform(post("/api/tools/calculator")
                         .contentType("application/json")
                         .header("X-API-Key", "test-secret-key")
                         .content("{\"input\":\"2+3\"}"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
-    void protectedPostWithWrongKey() throws Exception {
-        // P3-3: Without JWT, Spring Security blocks regardless of API Key validity.
+    void postWithWrongApiKeyAndNoJwtReturns401() throws Exception {
+        // API Key 对不对都不影响结论：没有 JWT 就是未认证
         mockMvc.perform(post("/api/tools/calculator")
                         .contentType("application/json")
                         .header("X-API-Key", "wrong-key")
                         .content("{\"input\":\"2+3\"}"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
-    void agentHealthIsPublic() throws Exception {
+    void agentEndpointsRequireAuth() throws Exception {
+        // /api/agent/** 不再匿名放行：否则后面新增 POST /api/agent/{name} 就等于对匿名开放
         mockMvc.perform(get("/api/agent/health"))
-                .andExpect(status().isOk());
+                .andExpect(status().isUnauthorized());
     }
 }

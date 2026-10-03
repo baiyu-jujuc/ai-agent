@@ -52,9 +52,10 @@ class AdminAccessSecurityTest {
     // ---------------------------------------------------------------- /api/admin/**
 
     @Test
-    void adminEndpointRejectsRequestWithoutJwt() throws Exception {
+    void adminEndpointWithoutJwtReturns401() throws Exception {
+        // 未认证 → 401（不是 403）
         mockMvc.perform(get("/api/admin/usage").header("X-API-Key", API_KEY))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -106,15 +107,16 @@ class AdminAccessSecurityTest {
     }
 
     @Test
-    void actuatorMetricsRequiresAuthentication() throws Exception {
+    void actuatorMetricsWithoutJwtReturns401() throws Exception {
         mockMvc.perform(get("/actuator/metrics"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
-    void actuatorPrometheusRequiresAuthentication() throws Exception {
+    void actuatorPrometheusWithoutJwtReturns401() throws Exception {
+        // 回归：prometheus 仍不对匿名开放（真实进程里由 scripts/verify-gateway.ps1 复核）
         mockMvc.perform(get("/actuator/prometheus"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

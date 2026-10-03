@@ -238,7 +238,7 @@ tag 只用 `model` / `scene` / `outcome` 这类有限枚举，**没有 userId / 
 修复内容：
 
 - `@EnableMethodSecurity` + 四个管理 Controller 上的 `@PreAuthorize("hasRole('ADMIN')")`；
-- `/actuator/**` 从 permitAll 收敛为**只放行 `/actuator/health`**；`metrics` / `prometheus` 含 token、成本、调用量与错误分布，属于算账数据，因此要求 **ADMIN 角色**（2026-09-27 追加收紧：此前只要求"已登录"）；
+- `/actuator/**` 从 permitAll 收敛为**只放行 `/actuator/health`**；`metrics` / `prometheus` 含 token、成本、调用量与错误分布，属于算账数据，因此要求 **ADMIN 角色**（2026-09-27 收紧到 ADMIN；2026-10-03 追加新路径默认拒绝与未认证统一 401：此前只要求"已登录"）；
 - `GlobalExceptionHandler` 新增 `AccessDeniedException` → **403**（原先被兜底 handler 吞成 500）；
 - ADMIN 角色来源：`ADMIN_USERNAMES` 名单 / `BOOTSTRAP_ADMIN_*` 引导管理员，且**不自动给已有用户提权**。
 
@@ -276,7 +276,7 @@ aiagenttest-redis-1    redis     Up 7 minutes (healthy)
 | 检查 | 结果 |
 |---|---|
 | `/actuator/health` | `{"status":"UP"}` |
-| `/actuator/prometheus` 不带 token | **HTTP 403**（越权修复在容器里同样生效） |
+| `/actuator/prometheus` 不带 token | **HTTP 401**（容器里当时实测 403；2026-10-03 起未认证统一 401） |
 | `/api/admin/usage` 不带 token | **HTTP 403** |
 | `/api/chat/storage-status` | `memoryBackend=redis`、`vectorStoreBackend=memory` |
 | MySQL 新表 | `llm_usage_record` / `model_route_config` / `prompt_template` 三张表都建出来了 |
@@ -307,7 +307,7 @@ aiagenttest-redis-1    redis     Up 7 minutes (healthy)
 | **`Dockerfile`（多阶段 maven 构建）** | ⚠️ **从未成功构建过 = 未经构建验证** | 本机容器无外网出口，`mvn package` 阶段必然超时。**文档与简历都不要写"已验证容器构建"**；换成有网络的环境后跑一次 `docker compose build` 再改口径 |
 | 空间内容变更时自动清缓存 | 未接线 | `SemanticCacheService.evictSpace()` 已实现且有测试，但还没挂到文档上传/回滚的调用点上 |
 | 难例 `hard-002`（跨文档多跳） | 唯一低分（1.5/3） | 模型把"纠错流程的时限"答成了 P2 响应时限 + 复盘时限；可以再拆成两条更明确的用例，或作为"多跳仍需加强"的真实结论保留 |
-| README 测试数与简历 | 已对齐 | 统一为 **240**：`mvn -B verify` 输出 `Tests run: 240, Failures: 0, Errors: 0, Skipped: 10`，即 **通过 230 + 跳过 10**（跳过的是 3 个用量探针 + 7 个依赖 Qdrant 的集成用例）。注意 surefire 的 `Tests run` **已经包含跳过数**，不要写成"240 通过" |
+| README 测试数与简历 | 已对齐 | 统一为 **247**：`mvn -B verify` 输出 `Tests run: 247, Failures: 0, Errors: 0, Skipped: 10`，即 **通过 237 + 跳过 10**（跳过的是 3 个用量探针 + 7 个依赖 Qdrant 的集成用例）。注意 surefire 的 `Tests run` **已经包含跳过数**，不要写成"247 通过" |
 
 ---
 

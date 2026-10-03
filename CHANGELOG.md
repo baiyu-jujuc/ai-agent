@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.2.1 — 2026-10-03
+
+Agent 能力补强的第一步：安全前置（含“新路径默认拒绝”）。对 v0.2.0 无破坏性变更，但认证状态码口径有变化（未认证由 403 改为 401）。
+
+### Security
+
+- **新路径默认拒绝**：`anyRequest()` 由 `permitAll` 改为 **`denyAll`**——没有显式放行的新路径，匿名请求 401、已登录普通用户 403，避免“新写一个接口就默认对匿名开放”
+- **`/api/agent/**` 不再匿名放行**：Agent 的只读接口（`health` / `models` / `list`）改为需要 JWT，为 `POST /api/agent/{name}`（Agent 执行入口）守底线；否则匿名就能触发模型调用（烧 Token）与内置工具
+- **未认证统一返回 401**：新增 `authenticationEntryPoint` 与 `accessDeniedHandler`，把“未认证（401）”与“已认证但无权限（403）”分开，与 `ApiKeyInterceptor` 缺 Key 时的 401 口径一致
+- 单页 UI 的静态路径（`/`、`/index.html`、`/favicon.ico`）与 `/error` 显式放行，避免被“默认拒绝”误伤
+- `/api/agent/**` 从 `agent.security.public-paths` 移除，与其他业务接口一致（需要 `X-API-Key` + JWT）
+
+### Tests
+
+- 新增 `AgentAccessSecurityTest`（7 条）：匿名访问 `/api/agent/**` → 401；登录后只读接口仍可用；未来的 `POST /api/agent/{name}` 匿名 → 401；未实现的新路径默认拒绝（匿名 401 / 普通用户 403）；首页仍可匿名打开
+- 既有无 JWT 用例的期望值由 403 更新为 401（`SecurityConfigTest` / `JwtRouteSecurityTest` / `LegacyRagDisabledTest` / `AdminAccessSecurityTest`）
+- 测试数：v0.2.0 的 240 → **247（通过 237 + 跳过 10）**，失败 0
 ## v0.2.0 — 2026-09-19
 
 AI 平台升级：统一网关 + 计量 + 稳定性 + 缓存与 Prompt 治理 + 离线评测。每一层都有独立开关，出问题可按层定位；关掉开关即退回改造前行为。

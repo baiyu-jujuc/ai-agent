@@ -289,6 +289,7 @@ curl.exe -s "http://localhost:8080/api/admin/usage?from=2026-09-01&to=2026-09-30
 curl.exe -s "http://localhost:8080/api/admin/models"  -H "X-API-Key: <key>" -H "Authorization: Bearer <token>"
 curl.exe -s "http://localhost:8080/api/admin/prompts" -H "X-API-Key: <key>" -H "Authorization: Bearer <token>"
 curl.exe -s "http://localhost:8080/actuator/prometheus" -H "Authorization: Bearer <token>" | findstr llm_
+# 注意：<token> 必须是 ADMIN 角色的 JWT（普通用户读指标会得到 403）
 ```
 
 怎么拿到 ADMIN 角色：在 `ADMIN_USERNAMES`（逗号分隔）里列出用户名，或配置 `BOOTSTRAP_ADMIN_USERNAME` / `BOOTSTRAP_ADMIN_PASSWORD` 让启动时创建引导管理员（**已存在的同名用户不会被自动提权**）。
@@ -446,7 +447,7 @@ curl -X POST http://localhost:8080/api/chat/simple \
 ./mvnw clean verify --no-transfer-progress
 ```
 
-当前仓库共 240 个自动化测试（其中 10 个依赖外部服务的集成用例默认跳过），覆盖：
+当前仓库共 247 个自动化测试（**通过 237 + 跳过 10**），覆盖：
 
 - ChatController 参数与状态码
 - KB 服务、KbQaService 问答、消息持久化与多轮上下文
@@ -472,7 +473,11 @@ curl -X POST http://localhost:8080/api/chat/simple \
 - 平台 API Key 只通过请求头 `X-API-Key` 传递，常量时间比较，避免 URL 记录。
 - 按 IP 限流、CORS 白名单、Actuator 收敛暴露。
 - **管理接口越权修复**：开启方法级安全（`@EnableMethodSecurity`），`/api/admin/**`（用量、模型路由、Prompt、评测）统一要求 **ADMIN 角色**；普通用户即使是合法登录也只能拿到 403，不再"登录即可读成本、改路由与 Prompt"。
-- **Actuator 越权修复**：`/actuator/**` 从"全部放行"收敛为"只放行 `/actuator/health`"；`metrics` / `prometheus` 要求 **ADMIN 角色**（不是"登录即可"，因为它们会暴露成本与用量）。实测：不带 token → 403，普通用户 JWT → 403，仅 ADMIN 可读。
+- **Actuator 越权修复**：`/actuator/**` 从"全部放行"收敛为"只放行 `/actuator/health`"；`metrics` / `prometheus` 要求 **ADMIN 角色**（不是"登录即可"，因为它们会暴露成本与用量）。未认证读 → 401，普通用户 JWT → 403，仅 ADMIN 可读。
+- **未认证与无权限分开**：`401` = 没带凭证/凭证无效（前端跳登录），`403` = 登录了但角色不够（前端提示无权限）；缺失 `X-API-Key` 同样是 401，全站口径一致。
+- **新路径默认拒绝**：`anyRequest()` 由 `permitAll` 改为 `denyAll`——新增接口必须显式放行，否则匿名 401、普通用户 403，避免新写一个接口就默认对匿名开放。
+- **`/api/agent/**` 不再匿名放行**：Agent 只读接口改为需要 JWT，为 `POST /api/agent/{name}` 这类执行入口守底线，并从平台 Key 的公共白名单中移除。
+
 - `.env` 不入库，真实 Key 不出现在页面、日志和错误响应。
 - 生产环境必须替换默认 `AGENT_API_KEY`，并根据部署模式配置 DB / Redis / Qdrant / Embedding。
 - 异常处理统一返回通用错误信息，不泄露堆栈细节。
@@ -499,7 +504,7 @@ curl -X POST http://localhost:8080/api/chat/simple \
 - ✅ 语义缓存（独立 collection + 空间隔离 + 拒答不缓存）与 Prompt 模板版本管理
 - ✅ 离线评测跑批（77 条评测集 → Hit@5 / 引用准确率 / 拒答正确率 / 相关性 / P95 / 平均成本）
 - ✅ Prometheus 指标端点与自定义低基数指标（调用数 / token / 成本 / 降级 / 延迟）
-- ✅ 共 240 个自动化测试，其中 10 个依赖外部服务的集成用例默认跳过（3 个用量探针 + 7 个 Qdrant 集成用例），失败 0；默认不访问外网 LLM
+- ✅ 共 247 个自动化测试（通过 237 + 跳过 10），失败 0；跳过的是 3 个用量探针 + 7 个 Qdrant 集成用例，默认不访问外网 LLM
 - ✅ 管理接口与 Actuator 的越权修复（`/api/admin/**` 与 `/actuator/metrics`、`/actuator/prometheus` 均需 ADMIN 角色；Actuator 只放行 health）
 - ✅ 页面文档上传 UI（拖拽/选择上传、解析状态、版本列表、回滚）
 - ✅ 知识空间问答主链路打通（选空间 → /api/kb/spaces/{id}/ask）

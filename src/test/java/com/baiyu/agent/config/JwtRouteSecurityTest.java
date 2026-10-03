@@ -27,21 +27,21 @@ class JwtRouteSecurityTest {
     private MockMvc mockMvc;
 
     @Test
-    void kbSpacesWithoutJwtReturns403() throws Exception {
-        // P3-3: /api/kb/** requires authentication; without JWT -> 403
+    void kbSpacesWithoutJwtReturns401() throws Exception {
+        // /api/kb/** 需要认证；没有 JWT 就是"未认证"，返回 401
         mockMvc.perform(get("/api/kb/spaces")
                         .header("X-API-Key", "dev-key-change-in-production"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
-    void chatSimpleWithoutJwtReturns403() throws Exception {
-        // P3-3: /api/chat/** requires authentication (except public GET endpoints)
+    void chatSimpleWithoutJwtReturns401() throws Exception {
+        // /api/chat/** 需要认证（公开的只读 GET 除外）
         mockMvc.perform(post("/api/chat/simple")
                         .contentType("application/json")
                         .header("X-API-Key", "dev-key-change-in-production")
                         .content("{\"message\":\"hello\"}"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
